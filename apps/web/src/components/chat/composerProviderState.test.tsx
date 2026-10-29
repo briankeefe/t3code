@@ -12,6 +12,8 @@ import {
   withImplicitFastModeDefault,
 } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
+import { buildTraitsTriggerDisplay } from "@t3tools/client-runtime/model-traits";
+import { formatModelSelectionEffort } from "@t3tools/client-runtime/state/thread-execution";
 
 const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("codex");
 const MODEL = "test-model";
@@ -61,6 +63,30 @@ function selections(
 }
 
 describe("getComposerProviderState", () => {
+  it("shows unknown native effort without guessing, then prefers reported and explicitly selected levels", () => {
+    const descriptor = selectDescriptor("thinking", [
+      { id: "low", label: "Low" },
+      { id: "high", label: "High" },
+    ]);
+    const selection = { instanceId: ProviderInstanceId.make("omp"), model: MODEL };
+    const reported = { ...selection, options: selections(["thinking", "high"]) };
+    const display = (reportedModelSelection: typeof reported | null, currentValue?: string) =>
+      buildTraitsTriggerDisplay({
+        provider: ProviderDriverKind.make("omp"),
+        descriptors: [{ ...descriptor, ...(currentValue ? { currentValue } : {}) }],
+        primarySelectDescriptorId: "thinking",
+        ultrathinkPromptControlled: false,
+        modelSelection: {
+          ...selection,
+          ...(currentValue ? { options: selections(["thinking", currentValue]) } : {}),
+        },
+        reportedModelSelection,
+      }).label;
+    expect(display(null)).toBe("Default");
+    expect(display(reported)).toBe("High");
+    expect(display(reported, "low")).toBe("Low");
+    expect(formatModelSelectionEffort(selection, modelWith([descriptor]), reported)).toBe("High");
+  });
   it("uses descriptor defaults for display without dispatching them as overrides", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,

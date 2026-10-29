@@ -14,10 +14,9 @@ import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 export const ULTRATHINK_PROMPT_PREFIX = "Ultrathink:\n";
 
-export const REASONING_SELECT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
-  ...REASONING_EFFORT_OPTION_IDS,
-  "thinking",
-]);
+export const REASONING_SELECT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set(
+  REASONING_EFFORT_OPTION_IDS,
+);
 
 export function replaceDescriptorCurrentValue(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
@@ -156,11 +155,18 @@ export function buildTraitsTriggerDisplay(input: {
         ? "Ultrathink"
         : descriptor.type === "boolean"
           ? `${descriptor.label} ${descriptor.currentValue === true ? "On" : "Off"}`
-          : getProviderOptionCurrentLabel(
+          : (getProviderOptionCurrentLabel(
               descriptor,
               input.modelSelection,
               input.reportedModelSelection,
-            );
+            ) ??
+            (REASONING_SELECT_DESCRIPTOR_IDS.has(descriptor.id)
+              ? (getDescriptorStringValue(
+                  descriptor,
+                  input.modelSelection,
+                  input.reportedModelSelection,
+                ) ?? "Default")
+              : undefined));
     if (typeof label === "string" && label.length > 0) {
       if (
         reasoningLabelIndex === -1 &&

@@ -64,6 +64,7 @@ const setup = Effect.fnUntraced(function* () {
   const abortStarted = yield* Deferred.make<void>();
   const abortRelease = yield* Deferred.make<void>();
   let nativeFile = "/fake/omp-session.jsonl";
+  let nativeThinking = "off";
   const connection: OmpRpcConnection = {
     events: nativeEvents,
     exited: Effect.never,
@@ -82,7 +83,7 @@ const setup = Effect.fnUntraced(function* () {
             isStreaming: false,
             hasPendingAsyncWork: false,
             model: { provider: "test", id: "model", contextWindow: 8192 },
-            thinkingLevel: "off",
+            thinkingLevel: nativeThinking,
           });
         case "get_available_commands":
           return Effect.succeed({ commands: [{ name: OMP_PERMISSION_GUARD_COMMAND }] });
@@ -92,6 +93,9 @@ const setup = Effect.fnUntraced(function* () {
           return Effect.succeed({ entries: [], leafId: null });
         case "switch_session":
           nativeFile = String(record.sessionPath);
+          return Effect.succeed({});
+        case "set_thinking_level":
+          nativeThinking = String(record.level);
           return Effect.succeed({});
         case "abort":
           return Deferred.succeed(abortStarted, undefined).pipe(
@@ -168,7 +172,11 @@ const setup = Effect.fnUntraced(function* () {
     lastVisitedAt: null,
     deletedAt: null,
   };
-  const start = Effect.fnUntraced(function* (ordinal = 1, target = providerThread) {
+  const start = Effect.fnUntraced(function* (
+    ordinal = 1,
+    target = providerThread,
+    thinking?: string,
+  ) {
     const runId = RunId.make(`omp-regression-run-${ordinal}`);
     const input: ProviderAdapter.ProviderAdapterV2TurnInput = {
       appThread: { ...appThread, id: target.appThreadId ?? threadId },
@@ -186,13 +194,18 @@ const setup = Effect.fnUntraced(function* () {
         createdBy: "user",
         creationSource: "web",
       },
-      modelSelection: selection,
+      modelSelection:
+        thinking === undefined
+          ? selection
+          : { ...selection, options: [{ id: "thinking", value: thinking }] },
       runtimePolicy: policy,
     };
     yield* runtime.startTurn(input);
     return input;
   });
-  const take = Effect.fnUntraced(function* (type: "turn.terminal" | "provider_turn.updated") {
+  const take = Effect.fnUntraced(function* (
+    type: "turn.terminal" | "provider_turn.updated" | "provider_thread.updated",
+  ) {
     while (true) {
       const event = yield* Queue.take(emitted);
       if (event.type === type) return event;
@@ -211,6 +224,9 @@ const setup = Effect.fnUntraced(function* () {
     attachmentRelease,
     abortStarted,
     abortRelease,
+    setNativeThinking: (level: string) => {
+      nativeThinking = level;
+    },
   };
 });
 
@@ -381,6 +397,54 @@ describe("OMP adapter outcome and ownership", () => {
             "completed",
           );
           assert.equal(test.providerThread.nativeThreadRef?.nativeId, "/fake/omp-session.jsonl");
+        }),
+      ).pipe(Effect.provide(layer)),
+  );
+  it.effect(
+    "reports native effort at registration and after a turn instead of guessing from the requested choice",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const test = yield* setup();
+          const registered = yield* test.take("provider_thread.updated");
+          if (registered.type !== "provider_thread.updated")
+            throw new Error("Missing registered thread");
+          assert.deepEqual(registered.providerThread.nativeMetadata?.modelSelection, {
+            instanceId: selection.instanceId,
+            model: "test/model",
+            options: [{ id: "thinking", value: "off" }],
+          });
+          yield* test.start();
+          yield* test.take("provider_thread.updated");
+          test.setNativeThinking("high");
+          yield* test.emit({
+            type: "prompt_result",
+            id: "t3-prompt-1",
+            status: "completed",
+            sessionSettled: true,
+          });
+          const completed = yield* test.take("provider_thread.updated");
+          if (completed.type !== "provider_thread.updated")
+            throw new Error("Missing completed thread");
+          assert.equal(completed.providerThread.status, "idle");
+          assert.deepEqual(completed.providerThread.nativeMetadata?.modelSelection?.options, [
+            { id: "thinking", value: "high" },
+          ]);
+          yield* test.take("turn.terminal");
+          yield* test.start(2, test.providerThread, "off");
+          yield* test.take("provider_thread.updated");
+          yield* test.emit({
+            type: "prompt_result",
+            id: "t3-prompt-2",
+            status: "completed",
+            sessionSettled: true,
+          });
+          const selected = yield* test.take("provider_thread.updated");
+          if (selected.type !== "provider_thread.updated")
+            throw new Error("Missing selected effort");
+          assert.deepEqual(selected.providerThread.nativeMetadata?.modelSelection?.options, [
+            { id: "thinking", value: "off" },
+          ]);
         }),
       ).pipe(Effect.provide(layer)),
   );

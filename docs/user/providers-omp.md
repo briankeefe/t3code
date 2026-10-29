@@ -38,6 +38,11 @@ Refresh discovers OMP's usable models without starting an agent or loading exten
 than assuming Pi's supported levels. Add an extension-only model as a custom model ID if it does
 not appear in the background catalog.
 
+The composer shows the selected effort beside the model, or **Default** until OMP reports its
+current level. Open the picker with **Cmd+Shift+E** on macOS or **Ctrl+Shift+E** elsewhere, then
+use the arrow keys and Enter to choose a level. Native model and effort updates are retained
+with the thread; an explicit composer choice takes precedence for the next prompt.
+
 Commands and skills load when a real OMP session starts in a workspace, not during background
 status checks. OMP skills then appear in the composer's `$` menu. Your normal OMP configuration
 and credentials remain on the server; connecting from another client does not copy credentials

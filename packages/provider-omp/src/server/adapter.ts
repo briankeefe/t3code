@@ -281,6 +281,18 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
         const window = number(model, "contextWindow");
         if (provider && id && window && window > 0) modelWindows.set(`${provider}/${id}`, window);
       };
+      const modelSelectionFromState = (state: unknown): ModelSelection | undefined => {
+        const model = field(state, "model");
+        const provider = string(model, "provider");
+        const id = string(model, "id");
+        if (!provider || !id) return undefined;
+        const thinking = string(state, "thinkingLevel");
+        return {
+          instanceId: options.instanceId,
+          model: `${provider}/${id}`,
+          ...(thinking === undefined ? {} : { options: [{ id: "thinking", value: thinking }] }),
+        };
+      };
       const ensureHosted = (wanted: OrchestrationV2ProviderThread) =>
         thread !== null &&
         wanted.id === thread.id &&
@@ -394,10 +406,12 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
         const state = broken
           ? undefined
           : yield* request({ type: "get_state" }).pipe(Effect.orElseSucceed(() => undefined));
+        const reportedModelSelection = modelSelectionFromState(state);
         const usage = field(state, "contextUsage");
         const usedTokens = number(usage, "tokens");
         const maxTokens =
           number(usage, "contextWindow") ?? number(field(state, "model"), "contextWindow");
+        appliedThinking = string(state, "thinkingLevel") ?? appliedThinking;
         turn.providerTurn = {
           ...turn.providerTurn,
           status,
@@ -423,6 +437,14 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
         yield* updateThread({
           status: broken ? "error" : "idle",
           ...(leaf === undefined ? {} : { nativeConversationHeadRef: ompRef(leaf) }),
+          ...(reportedModelSelection === undefined
+            ? {}
+            : {
+                nativeMetadata: {
+                  ...thread?.nativeMetadata,
+                  modelSelection: reportedModelSelection,
+                },
+              }),
         });
         yield* updateSession(broken || status === "failed" ? "error" : "ready", failureMessage);
         if (status === "failed") {
@@ -746,9 +768,18 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
               };
         registered = true;
         const branch = yield* readBranch();
+        const reportedModelSelection = modelSelectionFromState(captured.state);
         thread = {
           ...thread,
           nativeConversationHeadRef: branch.length ? ompRef(branch.at(-1)!.id) : null,
+          ...(reportedModelSelection === undefined
+            ? {}
+            : {
+                nativeMetadata: {
+                  ...thread.nativeMetadata,
+                  modelSelection: reportedModelSelection,
+                },
+              }),
         };
         if (publish)
           yield* emit({

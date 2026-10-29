@@ -1,4 +1,5 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import { assertOmpOutput } from "./omp_output.ts";
 
 import { claudeBackgroundSubagentAfterRootInput } from "./claude_background_subagent_after_root/input.ts";
 import { assertClaudeBackgroundSubagentAfterRootOutput } from "./claude_background_subagent_after_root/output.ts";
@@ -223,6 +224,11 @@ import {
   type OrchestratorReplayFixture,
   WORKSPACE_NEVER_POLICY,
 } from "./shared.ts";
+
+const OMP_MODEL_SELECTION = {
+  instanceId: ProviderInstanceId.make("omp"),
+  model: "openai-codex/gpt-6-luna",
+};
 
 export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixture> = [
   {
@@ -622,6 +628,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     buildInput: simpleInput,
     providers: [
       {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./simple/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
+      {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./simple/codex_transcript.ndjson", import.meta.url),
         modelSelection: CODEX_MODEL_SELECTION,
@@ -693,6 +705,14 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     name: "tool_call_denied_write",
     buildInput: toolCallDeniedWriteInput,
     providers: [
+      {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./tool_call_denied_write/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        runtimeMode: "approval-required",
+        expectedAbsentWorkspacePaths: [TOOL_CALL_DENIED_WRITE_TARGET],
+        assertOutput: assertOmpOutput,
+      },
       {
         driver: ProviderDriverKind.make("claudeAgent"),
         transcriptFile: new URL(
@@ -812,6 +832,15 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     name: "tool_call_workspace_never",
     buildInput: toolCallWorkspaceNeverInput,
     providers: [
+      {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL(
+          "./tool_call_workspace_never/omp_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
       {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL(
@@ -1226,6 +1255,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     buildInput: multiTurnInput,
     providers: [
       {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./multi_turn/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
+      {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./multi_turn/codex_transcript.ndjson", import.meta.url),
         modelSelection: CODEX_MODEL_SELECTION,
@@ -1345,6 +1380,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     buildInput: providerThreadResumeInput,
     providers: [
       {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./provider_thread_resume/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
+      {
         driver: ProviderDriverKind.make("pi"),
         transcriptFile: new URL("./provider_thread_resume/pi_transcript.ndjson", import.meta.url),
         modelSelection: PI_MODEL_SELECTION,
@@ -1382,6 +1423,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     name: "queued_turn",
     buildInput: queuedTurnInput,
     providers: [
+      {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./queued_turn/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
       {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./queued_turn/codex_transcript.ndjson", import.meta.url),
@@ -1522,6 +1569,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     buildInput: messageSteeringInput,
     providers: [
       {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./message_steering/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
+      {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./message_steering/codex_transcript.ndjson", import.meta.url),
         modelSelection: CODEX_MODEL_SELECTION,
@@ -1569,6 +1622,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     name: "turn_interrupt",
     buildInput: turnInterruptInput,
     providers: [
+      {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./turn_interrupt/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
       {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./turn_interrupt/codex_transcript.ndjson", import.meta.url),
@@ -1731,6 +1790,12 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
     name: "thread_rollback",
     buildInput: threadRollbackInput,
     providers: [
+      {
+        driver: ProviderDriverKind.make("omp"),
+        transcriptFile: new URL("./thread_rollback/omp_transcript.ndjson", import.meta.url),
+        modelSelection: OMP_MODEL_SELECTION,
+        assertOutput: assertOmpOutput,
+      },
       {
         driver: ProviderDriverKind.make("codex"),
         transcriptFile: new URL("./thread_rollback/codex_transcript.ndjson", import.meta.url),

@@ -113,7 +113,7 @@ function replayValueMatches(expected: unknown, actual: unknown): boolean {
   return Object.is(expected, actual);
 }
 
-const ADAPTER_REQUEST_ID = /^t3-\d+$/u;
+const ADAPTER_REQUEST_ID = /^t3-(?:prompt-)?\d+$/u;
 
 function adapterRequestId(frame: unknown): string | undefined {
   const id = isRecord(frame) ? frame.id : undefined;
@@ -186,9 +186,9 @@ class PiReplayController {
   private readonly held: Array<{ readonly process: PiReplayProcess; readonly actual: unknown }> =
     [];
   private readonly processes: Array<PiReplayProcess> = [];
-  private readonly transcript: PiRpcReplayTranscript;
+  private readonly transcript: ProviderReplayTranscript;
 
-  constructor(transcript: PiRpcReplayTranscript) {
+  constructor(transcript: ProviderReplayTranscript) {
     this.transcript = transcript;
   }
 
@@ -358,6 +358,16 @@ function makePiReplaySpawner(
   );
 }
 
+export const makeRpcReplaySpawnerLayer = (transcript: ProviderReplayTranscript) =>
+  Layer.effect(
+    ChildProcessSpawner.ChildProcessSpawner,
+    Effect.gen(function* () {
+      const controller = new PiReplayController(transcript);
+      yield* Effect.addFinalizer(() => Effect.sync(() => controller.assertComplete()));
+      return makePiReplaySpawner(controller);
+    }),
+  );
+
 export function layer<E, R>(input: {
   readonly scenario: string;
   readonly spawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner, E, R>;
@@ -416,14 +426,7 @@ export const PiOrchestratorReplayHarness: OrchestratorV2ProviderReplayHarness<
       scenario: transcript.scenario,
       binaryPath: "pi",
       launchArgs: metadataString(transcript, "launchArgs"),
-      spawner: Layer.effect(
-        ChildProcessSpawner.ChildProcessSpawner,
-        Effect.gen(function* () {
-          const controller = new PiReplayController(transcript);
-          yield* Effect.addFinalizer(() => Effect.sync(() => controller.assertComplete()));
-          return makePiReplaySpawner(controller);
-        }),
-      ),
+      spawner: makeRpcReplaySpawnerLayer(transcript),
     }),
 };
 

@@ -273,6 +273,7 @@ export interface ProviderOrchestratorReplayVariant {
   readonly recordedScenario?: string;
   readonly transcriptEntriesThroughLabel?: string;
   readonly modelSelection: ModelSelection;
+  readonly runtimeMode?: RuntimeMode;
   readonly runtimePolicyOverride?: RuntimePolicyV2Override;
   readonly runContinuationWorker?: boolean;
   readonly expectedAbsentWorkspacePaths?: ReadonlyArray<string>;

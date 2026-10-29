@@ -35,6 +35,7 @@ const DRIVERS_WITH_REPLAY_FIXTURE_FILES = new Set([
   "muse",
   "opencode",
   "pi",
+  "omp",
 ]);
 for (const fixture of ORCHESTRATOR_REPLAY_FIXTURES) {
   for (const provider of fixture.providers) {
@@ -119,7 +120,10 @@ const runFixtureProvider = Effect.fn("runOrchestratorReplayFixture")(function* <
     transcriptEntriesThroughLabel(rawTranscript, input.driver.transcriptEntriesThroughLabel),
     { driver: input.driver.driver, model: input.driver.modelSelection.model },
   );
-  const fixtureInput = input.buildInput();
+  const fixtureInput = {
+    ...input.buildInput(),
+    ...(input.driver.runtimeMode === undefined ? {} : { runtimeMode: input.driver.runtimeMode }),
+  };
   const workspace = yield* checkpointWorkspace(input.fixtureName, fixtureInput.workspaceFiles);
   const transcript = yield* input.harness.decodeTranscript(
     input.materializeWorkspace === undefined

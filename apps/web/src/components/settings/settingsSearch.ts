@@ -8,6 +8,7 @@ import {
   sourceControlClients,
   type SourceControlDefinition,
 } from "@t3tools/client-runtime/source-control-clients";
+import { providerClients } from "@t3tools/client-runtime/provider-clients";
 import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import * as Schema from "effect/Schema";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
@@ -786,6 +787,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Providers",
     to: "/settings/providers",
     searchTerms: [
+      ...providerClients.definitions.flatMap((definition) => [
+        definition.driverKind,
+        definition.label,
+      ]),
+      "oh my pi",
       "agents cli codex claude cursor grok fx opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory endpoint arguments environment variables display name accent color custom favorite hidden auto compact",
     ],
   },

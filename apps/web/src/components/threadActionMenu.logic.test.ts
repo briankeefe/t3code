@@ -41,6 +41,8 @@ describe("buildThreadActionMenuItems", () => {
             "unpin",
             "unsettle",
             "unsnooze",
+            "toggle-waiting-on-others",
+            "toggle-circle-back",
             "rename",
             "regenerate-title",
             "auto-settle",
@@ -51,6 +53,8 @@ describe("buildThreadActionMenuItems", () => {
             "pin",
             "settle",
             "snooze",
+            "toggle-waiting-on-others",
+            "toggle-circle-back",
             "rename",
             "regenerate-title",
             "auto-settle",
@@ -61,6 +65,31 @@ describe("buildThreadActionMenuItems", () => {
       expect(
         items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
           true,
+      ).toBe(true);
+    },
+  );
+
+  it.each([null, "waiting-on-others", "circle-back"] as const)(
+    "shows mutually exclusive follow-up checks for %s",
+    (followUp) => {
+      const items = buildThreadActionMenuItems({ ...baseState, followUp });
+      expect(items.find((item) => item.id === "toggle-waiting-on-others")).toMatchObject({
+        label:
+          followUp === "waiting-on-others"
+            ? "Clear waiting on someone else"
+            : "Waiting on someone else",
+        checked: followUp === "waiting-on-others",
+      });
+      expect(items.find((item) => item.id === "toggle-circle-back")).toMatchObject({
+        label: followUp === "circle-back" ? "Dismiss Will circle back" : "Will circle back",
+        checked: followUp === "circle-back",
+      });
+      expect(
+        buildThreadActionMenuItems({ ...baseState, followUp, canOperate: false })
+          .filter(
+            (item) => item.id === "toggle-waiting-on-others" || item.id === "toggle-circle-back",
+          )
+          .every((item) => item.disabled),
       ).toBe(true);
     },
   );

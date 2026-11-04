@@ -279,6 +279,22 @@ describe("resolveSidebarThreadStatus", () => {
     ).toBe("approval");
   });
 
+  it.each(["waiting-on-others", "circle-back"] as const)(
+    "keeps runtime attention and activity separate from the %s follow-up mark",
+    (followUp) => {
+      const marked = { ...idle, followUp };
+      expect(resolveSidebarThreadStatus({ ...marked, runtime })).toBe("working");
+      expect(resolveSidebarThreadStatus({ ...marked, runtime, hasPendingApprovals: true })).toBe(
+        "approval",
+      );
+      expect(resolveSidebarThreadStatus({ ...marked, runtime, hasPendingUserInput: true })).toBe(
+        "input",
+      );
+      expect(resolveSidebarThreadStatus(marked)).toBe("ready");
+      expect(marked.followUp).toBe(followUp);
+    },
+  );
+
   it("shows a waiting guest message as a Request, below the agent's own requests", () => {
     expect(resolveSidebarThreadStatus({ ...idle, pendingGuestMessageCount: 1, runtime })).toBe(
       "request",

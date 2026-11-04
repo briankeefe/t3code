@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, OrchestrationV2FollowUp } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
@@ -16,6 +16,8 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "toggle-waiting-on-others"
+  | "toggle-circle-back"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -77,6 +79,7 @@ export interface ThreadActionMenuState {
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
+  readonly followUp?: OrchestrationV2FollowUp | null;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects attached providers, so disable it while running. */
@@ -160,6 +163,19 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
+    {
+      id: "toggle-waiting-on-others",
+      label:
+        state.followUp === "waiting-on-others"
+          ? "Clear waiting on someone else"
+          : "Waiting on someone else",
+      checked: state.followUp === "waiting-on-others",
+    },
+    {
+      id: "toggle-circle-back",
+      label: state.followUp === "circle-back" ? "Dismiss Will circle back" : "Will circle back",
+      checked: state.followUp === "circle-back",
+    },
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [

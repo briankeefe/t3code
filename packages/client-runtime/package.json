@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./state/thread-status-presentation": {
+      "types": "./src/state/threadStatusPresentation.ts",
+      "default": "./src/state/threadStatusPresentation.ts"
+    },
     "./zip/bounded-zip": {
       "types": "./src/zip/boundedZip.ts",
       "default": "./src/zip/boundedZip.ts"

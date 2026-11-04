@@ -1,6 +1,7 @@
 import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
+import { toggleThreadFollowUp } from "@t3tools/client-runtime/state/thread-status-presentation";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
   dropThreadContext,
@@ -2557,6 +2558,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               isSettled,
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
+              followUp: thread.followUp ?? null,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
@@ -2677,6 +2679,29 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   type: "error",
                   title: "Failed to update auto-settle",
                   description: error instanceof Error ? error.message : "An error occurred.",
+                }),
+              );
+            }
+            return;
+          }
+          case "toggle-waiting-on-others":
+          case "toggle-circle-back": {
+            const result = await updateThreadMetadata({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                followUp: toggleThreadFollowUp(
+                  thread.followUp,
+                  clicked.value === "toggle-waiting-on-others" ? "waiting-on-others" : "circle-back",
+                ),
+              },
+            });
+            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Failed to update follow-up marker",
+                  description: String(squashAtomCommandFailure(result)),
                 }),
               );
             }

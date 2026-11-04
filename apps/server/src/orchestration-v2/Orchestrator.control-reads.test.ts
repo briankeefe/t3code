@@ -198,6 +198,117 @@ it.effect(
     }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect(
+  "persists mutually exclusive manual follow-ups independently of runtime requests and thread lifecycle",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread:external-waiting");
+      const otherId = ThreadId.make("thread:external-waiting-other");
+      for (const id of [threadId, otherId]) {
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`create:${id}`),
+          threadId: id,
+          projectId: ProjectId.make("project:external-waiting"),
+          title: "Waiting marker",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        assert.isNull((yield* projections.getThreadShell(id))?.followUp);
+      }
+      const now = yield* DateTime.now;
+      yield* projections.apply({
+        id: EventId.make("external-waiting:request"),
+        type: "runtime-request.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: RuntimeRequestId.make("external-waiting:approval"),
+          nodeId: NodeId.make("external-waiting:node"),
+          providerTurnId: null,
+          nativeRequestRef: null,
+          kind: "command",
+          status: "pending",
+          responseCapability: {
+            type: "live",
+            providerSessionId: ProviderSessionId.make("external-waiting:session"),
+          },
+          createdAt: now,
+          resolvedAt: null,
+        },
+      });
+      const before = yield* projections.getThreadShell(threadId);
+      assert.ok(before?.pendingRuntimeRequest);
+      const beforeProjection = yield* projections.getThreadProjection(threadId);
+      for (const [index, followUp] of ([
+        "waiting-on-others",
+        "circle-back",
+        null,
+        "waiting-on-others",
+      ] as const).entries()) {
+        const commandId = CommandId.make(`external-waiting:toggle:${index}`);
+        yield* orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId,
+          threadId,
+          followUp,
+        });
+        const projection = yield* projections.getThreadProjection(threadId);
+        const shell = yield* projections.getThreadShell(threadId);
+        assert.equal(projection.thread.followUp, followUp);
+        assert.equal(shell?.followUp, followUp);
+        assert.deepEqual(shell?.pendingRuntimeRequest, before.pendingRuntimeRequest);
+        assert.equal(shell?.status, before.status);
+        assert.deepEqual(projection.runtimeRequests, beforeProjection.runtimeRequests);
+        assert.equal(projection.thread.runtimeMode, beforeProjection.thread.runtimeMode);
+        assert.equal(projection.thread.interactionMode, beforeProjection.thread.interactionMode);
+        assert.equal(
+          projection.thread.activeProviderThreadId,
+          beforeProjection.thread.activeProviderThreadId,
+        );
+        assert.deepEqual(projection.runs, beforeProjection.runs);
+        assert.deepEqual(projection.providerSessions, beforeProjection.providerSessions);
+        assert.deepEqual(yield* outbox.listByCommandId(commandId), []);
+        const stored = yield* sql<{ payload_json: string }>`
+        SELECT payload_json FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`;
+        assert.equal(JSON.parse(stored[0]!.payload_json).followUp, followUp);
+        assert.isNull((yield* projections.getThreadShell(otherId))?.followUp);
+        if (followUp === null) continue;
+        yield* orchestrator.dispatch({
+          type: "thread.visit",
+          commandId: CommandId.make(`external-waiting:visit:${index}`),
+          threadId,
+          visitedAt: DateTime.formatIso(now),
+        });
+        assert.equal((yield* projections.getThreadShell(threadId))?.followUp, followUp);
+        for (const type of ["thread.archive", "thread.unarchive"] as const) {
+          yield* orchestrator.dispatch({
+            type,
+            commandId: CommandId.make(`external-waiting:${type}:${index}`),
+            threadId,
+          });
+          assert.equal((yield* projections.getThreadShell(threadId))?.followUp, followUp);
+        }
+        yield* orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`external-waiting:rename:${index}`),
+          threadId,
+          title: `Still following up ${index}`,
+        });
+        assert.equal((yield* projections.getThreadProjection(threadId)).thread.followUp, followUp);
+      }
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("marks a never-visited thread's first completion unread", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -218,6 +329,12 @@ it.effect("marks a never-visited thread's first completion unread", () =>
       creationSource: "web",
     });
     assert.isNull((yield* projections.getThreadShell(threadId))?.lastVisitedAt);
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("completion-watermark:follow-up"),
+      threadId,
+      followUp: "circle-back",
+    });
     const dispatch = (id: string) =>
       orchestrator.dispatch({
         type: "message.dispatch",
@@ -242,6 +359,7 @@ it.effect("marks a never-visited thread's first completion unread", () =>
     // The run ends in the dispatch's millisecond and must still be unread.
     const ended = yield* projections.getThreadShell(threadId);
     assert.ok(ended?.lastVisitedAt && ended.latestRunCompletedAt);
+    assert.equal(ended.followUp, "circle-back");
     assert.equal(
       DateTime.toEpochMillis(ended.lastVisitedAt),
       DateTime.toEpochMillis(dispatchedAt) - 1,
@@ -257,6 +375,7 @@ it.effect("marks a never-visited thread's first completion unread", () =>
       (yield* projections.getThreadShell(threadId))?.lastVisitedAt,
       ended.lastVisitedAt,
     );
+    assert.equal((yield* projections.getThreadShell(threadId))?.followUp, "circle-back");
   }).pipe(Effect.provide(layerTest)),
 );
 

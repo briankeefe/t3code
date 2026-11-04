@@ -25,7 +25,15 @@ import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
 } from "@t3tools/client-runtime/state/models";
-import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
+import {
+  resolveThreadStatusPresentation,
+  toggleThreadFollowUp,
+} from "@t3tools/client-runtime/state/thread-status-presentation";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentMachineKind,
+  type OrchestrationV2FollowUp,
+} from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -35,7 +43,7 @@ import { Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
-import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -73,7 +81,6 @@ import {
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
-  type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { shouldRecedeThreadRow } from "./thread-row-emphasis";
@@ -81,63 +88,6 @@ import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
-
-interface StatusLabel {
-  readonly label: string;
-  readonly icon: AppSymbolName;
-  readonly className: string;
-  readonly iconTintClassName: string;
-}
-const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> = {
-  approval: {
-    label: "Approval",
-    icon: "exclamationmark.shield",
-    className: "text-warning-foreground",
-    iconTintClassName: "accent-warning-foreground",
-  },
-  input: {
-    label: "Input",
-    icon: "questionmark.bubble",
-    className: "text-adaptive-indigo-600-300",
-    iconTintClassName: "accent-adaptive-indigo-600-300",
-  },
-  request: {
-    label: "Request",
-    icon: "person.crop.circle",
-    className: "text-adaptive-fuchsia-600-300",
-    iconTintClassName: "accent-adaptive-fuchsia-600-300",
-  },
-  working: {
-    label: "Working",
-    icon: "circle.dashed",
-    className: "text-adaptive-sky-600-400",
-    iconTintClassName: "accent-adaptive-sky-600-400",
-  },
-  waiting: {
-    label: "Waiting",
-    icon: "circle.dashed.inset.filled",
-    className: "text-foreground-muted",
-    iconTintClassName: "accent-foreground-muted",
-  },
-  failed: {
-    label: "Failed",
-    icon: "exclamationmark.circle",
-    className: "text-danger-foreground",
-    iconTintClassName: "accent-danger-foreground",
-  },
-  limited: {
-    label: "Limited",
-    icon: "exclamationmark.circle",
-    className: "text-warning-foreground",
-    iconTintClassName: "accent-warning-foreground",
-  },
-};
-const DONE_STATUS_LABEL: StatusLabel = {
-  label: "Done",
-  icon: "checkmark.circle",
-  className: "text-adaptive-emerald-700-300",
-  iconTintClassName: "accent-adaptive-emerald-700-300",
-};
 
 function ThreadListV2Duration(props: { readonly startedAt: string | null }) {
   const startedAtMs = Date.parse(props.startedAt ?? "");
@@ -688,12 +638,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const status = resolveThreadListV2Status(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
-  const workingLabel = STATUS_LABEL_BY_STATUS[status];
-  const showsWoke = status === "ready" && props.wokeAt !== null;
+  const statusPresentation = resolveThreadStatusPresentation(status, isUnread, thread.followUp);
+  const showsWoke = !statusPresentation.manual && status === "ready" && props.wokeAt !== null;
   const statusLabel =
-    (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
-      ? { ...workingLabel, label: "Goal" }
-      : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
+    status === "ready" && !isUnread && !statusPresentation.manual
+      ? null
+      : !statusPresentation.manual && status === "working" && thread.goal?.status === "active"
+        ? "Goal"
+        : statusPresentation.label;
   const recede = shouldRecedeThreadRow({ status, selected });
   const timeLabel = props.timeLabel;
 
@@ -717,6 +669,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
+  const toggleFollowUp = useCallback(
+    async (selected: OrchestrationV2FollowUp) => {
+      if (!canOperateThread) return;
+      const result = await updateMetadata({
+        environmentId: thread.environmentId,
+        input: { threadId: thread.id, followUp: toggleThreadFollowUp(thread.followUp, selected) },
+      });
+      if (result._tag === "Failure") {
+        Dialog.alert(
+          "Could not update follow-up marker",
+          "Try again when connected to this environment.",
+        );
+      }
+    },
+    [canOperateThread, thread.environmentId, thread.id, thread.followUp, updateMetadata],
+  );
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
@@ -928,6 +897,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
+      if (nativeEvent.event === "toggle-waiting-on-others") void toggleFollowUp("waiting-on-others");
+      if (nativeEvent.event === "toggle-circle-back") void toggleFollowUp("circle-back");
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
       if (nativeEvent.event === "unsnooze") handleUnsnooze();
@@ -976,6 +947,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     },
     [
       onNewThreadOnBranch,
+      toggleFollowUp,
       thread,
       handleArchive,
       handleDelete,
@@ -1057,6 +1029,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
   const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const statusCircle = (
+    <View
+      accessibilityLabel={statusPresentation.label}
+      className="size-3 shrink-0 rounded-full"
+      style={{
+        borderWidth: 2,
+        borderColor: statusPresentation.color,
+        backgroundColor: statusPresentation.filled ? statusPresentation.color : "transparent",
+      }}
+    />
+  );
   const cardContent = (
     <>
       <View className="flex-row items-start gap-2">
@@ -1125,28 +1108,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Pressable>
           ) : statusLabel ? (
             <View className="flex-row items-center gap-1">
-              <SymbolView
-                name={statusLabel.icon}
-                size={13}
-                tintColorClassName={
-                  selected
-                    ? selectedThreadRowColors.iconTintClassName
-                    : statusLabel.iconTintClassName
-                }
-                type="monochrome"
-                weight="semibold"
-              />
               <Text
                 className={cn(
                   "text-xs font-t3-bold",
                   (status === "working" || status === "waiting") && "tabular-nums",
-                  selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
+                  selected ? selectedThreadRowColors.foregroundClassName : "text-foreground-muted",
                 )}
               >
-                {statusLabel.label}
-                {status === "working" ? (
+                {statusLabel}
+                {!statusPresentation.manual && status === "working" ? (
                   <ThreadListV2Duration startedAt={resolveThreadWorkingStartedAt(thread)} />
-                ) : status === "waiting" ? (
+                ) : !statusPresentation.manual && status === "waiting" ? (
                   <ThreadListV2Duration startedAt={thread.latestRun?.completedAt ?? null} />
                 ) : null}
               </Text>
@@ -1285,10 +1257,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     </>
   );
 
-  const fadedCardContent = recede ? (
-    <View style={{ opacity: 0.55 }}>{cardContent}</View>
-  ) : (
-    cardContent
+  const fadedCardContent = (
+    <View className="flex-row items-start gap-2">
+      <View className="pt-1">{statusCircle}</View>
+      <View className="min-w-0 flex-1" style={recede ? { opacity: 0.55 } : undefined}>
+        {cardContent}
+      </View>
+    </View>
   );
 
   const rowContent = (close: () => void) =>
@@ -1299,9 +1274,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionOpacity={rowAppearance.interactionOpacity}
         className={rowAppearance.className}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={[
+          thread.title,
+          props.hasQueuedMessages ? "messages queued to send" : null,
+          statusPresentation.label,
+        ]
+          .filter(Boolean)
+          .join(", ")}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityActions={rowAccessibilityActions}
@@ -1332,9 +1311,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         interactionClassName={rowAppearance.interactionClassName}
         interactionOpacity={rowAppearance.interactionOpacity}
         accessibilityHint={swipeAccessibilityHint}
-        accessibilityLabel={
-          props.hasQueuedMessages ? `${thread.title}, messages queued to send` : thread.title
-        }
+        accessibilityLabel={[
+          thread.title,
+          props.hasQueuedMessages ? "messages queued to send" : null,
+          statusPresentation.label,
+        ]
+          .filter(Boolean)
+          .join(", ")}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
@@ -1384,6 +1367,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
+          {statusCircle}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(
@@ -1444,6 +1428,22 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 : []),
               { id: "copy-thread", title: "Copy thread", image: "text.bubble" },
               { id: "copy-thread-id", title: "Copy thread ID", image: "doc.on.doc" },
+              {
+                id: "toggle-waiting-on-others",
+                title:
+                  thread.followUp === "waiting-on-others"
+                    ? "Clear waiting on someone else"
+                    : "Waiting on someone else",
+                state: thread.followUp === "waiting-on-others" ? "on" : "off",
+                attributes: { disabled: !canOperateThread },
+              },
+              {
+                id: "toggle-circle-back",
+                title:
+                  thread.followUp === "circle-back" ? "Dismiss Will circle back" : "Will circle back",
+                state: thread.followUp === "circle-back" ? "on" : "off",
+                attributes: { disabled: !canOperateThread },
+              },
               ...(snoozedRow
                 ? snoozedMenuActions
                 : !props.settlementSupported

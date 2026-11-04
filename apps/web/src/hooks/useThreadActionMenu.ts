@@ -8,6 +8,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { toggleThreadFollowUp } from "@t3tools/client-runtime/state/thread-status-presentation";
 import {
   AuthOrchestrationOperateScope,
   type ScopedThreadRef,
@@ -138,6 +139,7 @@ export function useThreadActionMenu(input: {
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
+        followUp: thread.followUp ?? null,
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
@@ -236,6 +238,21 @@ export function useThreadActionMenu(input: {
         case "auto-settle:disabled":
           await reportFailure("Failed to update auto-settle", () =>
             setThreadAutoSettle(threadRef, action === "auto-settle:enabled"),
+          );
+          return;
+        case "toggle-waiting-on-others":
+        case "toggle-circle-back":
+          await reportFailure("Failed to update follow-up marker", () =>
+            updateThreadMetadata({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                followUp: toggleThreadFollowUp(
+                  thread.followUp,
+                  action === "toggle-waiting-on-others" ? "waiting-on-others" : "circle-back",
+                ),
+              },
+            }),
           );
           return;
         case "rename":

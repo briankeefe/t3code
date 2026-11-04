@@ -1,5 +1,7 @@
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
+import { SidebarAgentStatus } from "./SidebarAgentStatus";
+import { resolveThreadStatusPresentation } from "@t3tools/client-runtime/state/thread-status-presentation";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
@@ -707,6 +709,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  const agentStatus = status === "waiting" && thread.runtime?.status === "idle" ? "ready" : status;
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =
@@ -997,7 +1000,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: topStatus?.label ?? null,
+    statusLabel: resolveThreadStatusPresentation(agentStatus, isUnread, thread.followUp).label,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -1248,6 +1251,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 </span>
               )}
               {draftIndicator}
+              <SidebarAgentStatus
+                status={agentStatus}
+                unread={isUnread}
+                followUp={thread.followUp ?? null}
+              />
               {title}
               {multiline ? titleLineProviderStack : null}
               {pinIndicator}
@@ -1563,6 +1571,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              <SidebarAgentStatus
+                status={agentStatus}
+                unread={isUnread}
+                followUp={thread.followUp ?? null}
+              />
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">

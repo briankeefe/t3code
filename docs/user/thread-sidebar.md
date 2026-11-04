@@ -128,6 +128,24 @@ rename a thread, regenerate its title, or link and unlink a pull request. These 
 appear on web, desktop, and mobile without requiring the originating browser to remain
 open.
 
+### Agent status circles
+
+The circle beside each thread shows its current status: solid amber means working
+or monitoring; solid pink-red means an answer, approval, guest request, or usage
+limit needs attention, or the agent failed. Solid green means an unread completion.
+Outlined green means idle or already read.
+
+Choose **Waiting on someone else** from a thread's menu when progress depends on
+someone outside the thread. Choose **Will circle back** when you want to return to
+it later. These turn the existing circle solid purple or blue, respectively; they
+never add another circle. Choosing one replaces the other.
+
+Both marks are saved across reloads and connected devices. Reading, visiting,
+archiving, and agent activity do not dismiss them. A pink-red attention status
+temporarily takes priority; your mark returns when that attention is resolved.
+Choose **Clear waiting on someone else** or **Dismiss Will circle back** to remove
+the selected mark and restore the current agent status.
+
 ### Fold working threads (beta)
 
 Threads that are working or waiting on work they will resume from move into a collapsed

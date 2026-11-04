@@ -1,6 +1,7 @@
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
+import { resolveThreadStatusPresentation } from "@t3tools/client-runtime/state/thread-status-presentation";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
@@ -136,6 +137,64 @@ describe("resolveThreadListV2Status", () => {
     expect(resolveThreadListV2Status({ ...guest, hasPendingApprovals: true })).toBe("approval");
   });
 
+  it.each(["waiting-on-others", "circle-back"] as const)(
+    "preserves %s through mobile attention states and restores the mark afterwards",
+    (followUp) => {
+      const thread = {
+        ...presentThreadShell(
+          environmentId,
+          decodeThreadShell(
+            makeRawThreadShell({
+              status: "running",
+              activeRunId: RunId.make("run-follow-up"),
+              latestRunId: RunId.make("run-follow-up"),
+            }),
+          ),
+        ),
+        followUp,
+      };
+      const manual = resolveThreadStatusPresentation(
+        resolveThreadListV2Status(thread),
+        false,
+        thread.followUp,
+      );
+      expect(manual).toMatchObject({
+        manual: true,
+        filled: true,
+        color: followUp === "circle-back" ? "#7aa2f7" : "#bb9af7",
+      });
+      for (const attention of [
+        { ...thread, hasPendingApprovals: true },
+        { ...thread, hasPendingUserInput: true },
+        { ...thread, pendingGuestMessageCount: 1 },
+        { ...thread, runtime: { ...thread.runtime!, status: "failed" as const } },
+        {
+          ...thread,
+          runtime: {
+            ...thread.runtime!,
+            status: "failed" as const,
+            lastErrorClass: "usage_limit" as const,
+          },
+        },
+      ]) {
+        expect(
+          resolveThreadStatusPresentation(
+            resolveThreadListV2Status(attention),
+            false,
+            attention.followUp,
+          ),
+        ).toMatchObject({ manual: false, color: "#f7768e", filled: true });
+        expect(attention.followUp).toBe(followUp);
+      }
+      expect(
+        resolveThreadStatusPresentation(resolveThreadListV2Status(thread), true, thread.followUp),
+      ).toEqual(manual);
+      expect(
+        resolveThreadStatusPresentation(resolveThreadListV2Status(thread), false, null),
+      ).toMatchObject({ manual: false, color: "#e0af68", filled: true });
+    },
+  );
+
   it.each([
     { roster: "dev server", task: { kind: "command" }, status: "ready" },
     { roster: "dev server watchdog", task: { kind: "monitor" }, status: "ready" },
@@ -156,6 +215,12 @@ describe("resolveThreadListV2Status", () => {
 
       expect(resolveThreadListV2Status(thread)).toBe(status);
       expect(threadHasUnseenCompletion(thread)).toBe(true);
+      expect(
+        resolveThreadStatusPresentation(status, threadHasUnseenCompletion(thread), thread.followUp),
+      ).toMatchObject({
+        color: status === "ready" ? "#9ece6a" : "#e0af68",
+        filled: true,
+      });
     },
   );
 });

@@ -994,6 +994,13 @@ export function PullRequestDetailPanel({
     });
   };
 
+  const executePrReview = (sanity: boolean) => {
+    if (!detail) return;
+    void startAsk(sanity ? "execute-review-sanity" : "execute-review", {
+      prompt: `execute pr review ${detail.url}${sanity ? " --sanity" : ""}`,
+    });
+  };
+
   const askAboutGuideStop = (stop: PullRequestReviewGuideStop, index: number, question: string) => {
     if (!detail) return;
     void startAsk(
@@ -1360,6 +1367,7 @@ export function PullRequestDetailPanel({
                 attachesToComposer={attachTarget !== null}
                 askAboutPullRequest={askAboutPullRequest}
                 explainPullRequest={explainPullRequest}
+                executePrReview={executePrReview}
                 canFixFindings={canFixFindings}
                 startFixFindings={startFixFindings}
                 handoffLabels={handoffLabels}

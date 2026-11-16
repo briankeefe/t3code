@@ -546,7 +546,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         return [{ _tag: "noop" }, current];
       }
 
-      let history = current.history;
+      let history =
+        item.event.type === "thread.history-reset"
+          ? { ...EMPTY_THREAD_HISTORY_META }
+          : current.history;
       if (partial !== undefined && item.event.type === "turn-item.updated") {
         const ordinal = item.event.payload.ordinal;
         const watermark = history.latestLocalTurnOrdinal;

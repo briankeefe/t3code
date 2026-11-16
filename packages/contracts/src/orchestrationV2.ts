@@ -1825,6 +1825,16 @@ export const OrchestrationV2DomainEvent = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.history-reset"),
+    payload: OrchestrationV2AppThread,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
+    type: Schema.Literal("thread.fork-source-updated"),
+    payload: Schema.Struct({ fromThreadId: ThreadId, toThreadId: ThreadId }),
+  }),
+  Schema.Struct({
+    ...OrchestrationV2EventBase.fields,
     type: Schema.Literals([
       "thread.archived",
       "thread.unarchived",
@@ -2702,6 +2712,16 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
     ...OrchestrationV2JsonEventBaseFields,
     type: Schema.Literal("thread.created"),
     payload: OrchestrationV2AppThreadJson,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.history-reset"),
+    payload: OrchestrationV2AppThreadJson,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2JsonEventBaseFields,
+    type: Schema.Literal("thread.fork-source-updated"),
+    payload: Schema.Struct({ fromThreadId: ThreadId, toThreadId: ThreadId }),
   }),
   Schema.Struct({
     ...OrchestrationV2JsonEventBaseFields,

@@ -373,7 +373,7 @@ export const make = Effect.gen(function* () {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     const window = yield* electronWindow.create({
       ...initialBounds,
-      minWidth: 840,
+      minWidth: 640,
       minHeight: 620,
       show: false,
       autoHideMenuBar: true,

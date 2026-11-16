@@ -241,10 +241,20 @@ export function useComposerMenuItems({
         selectedProviderSkills,
         showSkillsInSlashMenu,
       );
-      const providerSlashCommandItems = getProviderSlashCommandsForSlashMenu(
-        selectedProviderSlashCommands,
-        slashMenuSkills,
-      ).map((command) => ({
+      const backgroundCommands: ServerProvider["slashCommands"] =
+        selectedProvider === "omp" && activeThreadId !== null
+          ? [
+              { name: "btw", description: "Ask a background question or open saved answers" },
+              { name: "pulse", description: "Check agent health without interrupting its work" },
+            ]
+          : [];
+      const providerSlashCommandItems = [
+        ...backgroundCommands,
+        ...getProviderSlashCommandsForSlashMenu(
+          selectedProviderSlashCommands,
+          slashMenuSkills,
+        ).filter((command) => command.name !== "btw" && command.name !== "pulse"),
+      ].map((command) => ({
         id: `provider-slash-command:${selectedProvider}:${command.name}`,
         type: "provider-slash-command" as const,
         provider: selectedProvider,

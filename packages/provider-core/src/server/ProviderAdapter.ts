@@ -1,4 +1,10 @@
-import type { OrchestrationV2HistoricalMessage } from "@t3tools/contracts";
+import type {
+  BackgroundQuestionAskInput,
+  BackgroundQuestionCancelInput,
+  BackgroundQuestionRecord,
+  BackgroundQuestionSnapshot,
+  OrchestrationV2HistoricalMessage,
+} from "@t3tools/contracts";
 import {
   ChatAttachment,
   CheckpointId,
@@ -539,10 +545,31 @@ export type ProviderAdapterV2SubagentOutcome = {
   readonly result: OrchestrationV2Subagent["result"];
 };
 
+export interface ProviderBackgroundQuestions {
+  readonly history: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Effect.Effect<BackgroundQuestionSnapshot, ProviderAdapterV2Error>;
+  readonly ask: (
+    input: Omit<BackgroundQuestionAskInput, "threadId"> & {
+      readonly providerThread: OrchestrationV2ProviderThread;
+    },
+  ) => Effect.Effect<BackgroundQuestionRecord, ProviderAdapterV2Error>;
+  readonly cancel: (
+    input: Omit<BackgroundQuestionCancelInput, "threadId"> & {
+      readonly providerThread: OrchestrationV2ProviderThread;
+    },
+  ) => Effect.Effect<{ readonly cancelled: boolean }, ProviderAdapterV2Error>;
+  readonly subscribe: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Stream.Stream<BackgroundQuestionSnapshot, ProviderAdapterV2Error>;
+}
+
 export interface ProviderAdapterV2SessionRuntime {
   readonly instanceId: ProviderInstanceId;
   readonly driver: ProviderDriverKind;
   readonly providerSessionId: ProviderSessionId;
+  /** Absent explicitly means the provider does not support isolated side questions. */
+  readonly backgroundQuestions?: ProviderBackgroundQuestions;
   readonly providerSession: OrchestrationV2ProviderSession;
   readonly events: Stream.Stream<ProviderAdapterV2Event, ProviderAdapterV2Error>;
   /** Manager runtimes broadcast independent subscriptions; adapters may expose only a single-consumer stream. */

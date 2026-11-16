@@ -118,6 +118,9 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { parseBackgroundQuestionCommand } from "@t3tools/client-runtime/state/backgroundQuestionController";
+import { useBackgroundQuestions } from "../../state/use-background-questions";
+import { BackgroundQuestionsPanel } from "./BackgroundQuestionsPanel";
 
 export const COMPOSER_COLLAPSED_CHROME = 60;
 
@@ -440,6 +443,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
   const composerDraftKey = props.draftKey ?? composerOwnerKey;
   const { text: draftMessage, attachments: draftAttachments } = useComposerDraft(composerDraftKey);
+  const isBackgroundCommand = parseBackgroundQuestionCommand(draftMessage) !== null;
   const queuedEdit = props.queuedEdit ?? null;
   const hasContent =
     draftMessage.trim().length > 0 ||
@@ -468,12 +472,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       states: uploadStates,
     });
   const sendPresentation = resolveComposerSendPresentation({
-    editingQueuedMessage: queuedEdit !== null,
-    running: props.activeThreadBusy,
+    editingQueuedMessage: queuedEdit !== null && !isBackgroundCommand,
+    running: props.activeThreadBusy && !isBackgroundCommand,
     canSteer: props.canSteerActiveTurn,
     followUpBehavior: props.followUpBehavior,
     deliveryDeferred:
-      props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading,
+      !isBackgroundCommand &&
+      (props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading),
   });
   const sendLabel = sendPresentation.label;
   const currentModelSelection = props.selectedThread.modelSelection;
@@ -492,6 +497,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       ) ?? null
     );
   })();
+  const backgroundQuestions = useBackgroundQuestions({
+    environmentId: props.environmentId,
+    threadId: props.isDraft ? null : props.selectedThread.id,
+    provider: selectedProviderStatus?.driver ?? null,
+  });
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     Keyboard.dismiss();
     navigation.navigate("ThreadAttachment", {
@@ -596,13 +606,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     props.sendBlockedReason ??
     (pendingPastedTextAttachmentCount > 0 ? "Attaching pasted text" : null) ??
     attachmentBlockReason;
-  const canSend =
-    (props.canOperateThread || props.connectionState !== "connected") &&
-    hasContent &&
-    !contextImports[composerDraftKey] &&
-    !isSubmissionLocked &&
-    sendBlockedReason === null &&
-    !modelUnavailable;
+  const canSend = isBackgroundCommand
+    ? !voiceInput.blocksSubmission && !backgroundQuestions.pending
+    : (props.canOperateThread || props.connectionState !== "connected") &&
+      hasContent &&
+      !contextImports[composerDraftKey] &&
+      !isSubmissionLocked &&
+      sendBlockedReason === null &&
+      !modelUnavailable;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the workspace layout's composer-editing flag when the composer unmounts
   useEffect(() => () => setComposerEditing(false), [setComposerEditing]);
@@ -653,6 +664,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     setComposerEditing(false);
   };
   const handleSend = async (followUp?: ActiveTurnComposerAction) => {
+    if (parseBackgroundQuestionCommand(draftMessage)) {
+      if (voiceInput.blocksSubmission) return;
+      const accepted = await backgroundQuestions.handleCommand(draftMessage);
+      if (accepted && getComposerDraftSnapshot(composerDraftKey).text === draftMessage) {
+        setComposerDraftText(composerDraftKey, "");
+      }
+      return;
+    }
     if (
       isSubmissionLocked ||
       sendBlockedReason !== null ||
@@ -821,6 +840,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         style={{ maxWidth: props.contentMaxWidth }}
       >
         {props.draftControls}
+        <BackgroundQuestionsPanel key={composerOwnerKey} questions={backgroundQuestions} />
         {!isSubmissionLocked &&
         composerMenu.trigger &&
         (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (

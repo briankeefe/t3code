@@ -1,8 +1,14 @@
 import * as Schema from "effect/Schema";
-import { IsoDateTime, NonNegativeInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
-export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex"]);
+export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex", "omp"]);
 export type AgentSessionSource = typeof AgentSessionSource.Type;
 
 export const AgentSessionImportSource = Schema.Struct({
@@ -17,6 +23,9 @@ export const AgentSessionImportSource = Schema.Struct({
   // records stored a number.
   inode: Schema.NullOr(Schema.Union([Schema.String, Schema.Number])),
   birthtimeMs: Schema.NullOr(Schema.Number),
+  herdr: Schema.optional(
+    Schema.Struct({ filePath: TrimmedNonEmptyString, sessionId: TrimmedNonEmptyString }),
+  ),
 });
 export type AgentSessionImportSource = typeof AgentSessionImportSource.Type;
 
@@ -48,9 +57,26 @@ export const AgentSessionScanResult = Schema.Struct({
 });
 export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
 
+export const HerdrSessionReimport = Schema.Struct({
+  threadId: ThreadId,
+  sourceVersion: TrimmedNonEmptyString,
+  workingVersion: TrimmedNonEmptyString,
+});
+export type HerdrSessionReimport = typeof HerdrSessionReimport.Type;
+
+export const HerdrSessionImportChange = Schema.Struct({
+  ...HerdrSessionReimport.fields,
+  title: TrimmedNonEmptyString,
+  relationship: Schema.Literals(["herdr_ahead", "t3_ahead", "diverged"]),
+  blockedReason: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type HerdrSessionImportChange = typeof HerdrSessionImportChange.Type;
+
 export const AgentSessionImportInput = Schema.Struct({
   projectId: ProjectId,
   expectedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  source: Schema.optional(Schema.Literal("herdr")),
+  reimport: Schema.optional(Schema.Array(HerdrSessionReimport)),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 
@@ -75,6 +101,9 @@ export class AgentSessionImportProjectChangedError extends Schema.TaggedError<Ag
 export const AgentSessionImportResult = Schema.Struct({
   importedCount: NonNegativeInt,
   skippedCount: NonNegativeInt,
+  herdrChanges: Schema.optional(Schema.Array(HerdrSessionImportChange)),
+  reimportedCount: Schema.optional(NonNegativeInt),
+  preservedThreadIds: Schema.optional(Schema.Array(ThreadId)),
 });
 export type AgentSessionImportResult = typeof AgentSessionImportResult.Type;
 

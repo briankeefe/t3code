@@ -49,6 +49,8 @@ import {
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
+import { useBackgroundQuestions } from "../state/use-background-questions";
+import { BackgroundQuestionsPanel } from "./chat/BackgroundQuestionsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
 import { useChatShortcuts } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
@@ -1377,6 +1379,11 @@ export default function ChatView(props: ChatViewProps) {
     providerDriver: activeProviderStatus?.driver ?? null,
     providers: providerStatuses,
     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
+  });
+  const backgroundQuestions = useBackgroundQuestions({
+    environmentId,
+    threadId: isServerThread ? (activeThread?.id ?? null) : null,
+    provider: activeProviderStatus?.driver ?? null,
   });
   const {
     beginLocalDispatch,
@@ -2793,6 +2800,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const { onSend } = useComposerSend({
     environmentId,
+    onBackgroundCommand: backgroundQuestions.handleCommand,
     routeThreadKey,
     currentRouteThreadKeyRef,
     draftId,
@@ -3409,6 +3417,7 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
+                  <BackgroundQuestionsPanel key={routeThreadKey} questions={backgroundQuestions} />
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div

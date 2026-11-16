@@ -55,6 +55,19 @@ terminal setup, and refresh again. An empty model catalog means OMP has no usabl
 that configuration. Configure API keys as instance environment variables rather than `--api-key`
 launch arguments so session and catalog discovery use the same credentials.
 
+## Background questions and pulse
+
+In an existing OMP conversation, use `/btw your question` to ask about the current task
+without interrupting it or adding the exchange to the main conversation. Use `/btw` or
+**Background answers** to reopen saved topics and ask follow-up questions. Answers stream
+in a separate panel on web, desktop, and mobile. Closing the panel does not cancel the answer;
+**Cancel background answer** stops only that side request.
+
+Use `/pulse` or **Check pulse** for a read-only report on progress, momentum, evidence,
+risks, and the next action. An optional suggested steer can be copied, but it is never
+sent automatically. Both commands share one background request at a time and require an
+OMP version with native BTW support. They are not available for other providers.
+
 ## Permissions and sessions
 
 T3 Code loads a permission guard into each OMP session:
@@ -77,6 +90,34 @@ than treating the end of one agent response as completion while background work 
 
 OMP is not offered for T3 Code's application text generation, such as commit-message generation.
 Historical OMP usage backfill is not included.
+
+## Import current Herdr sessions
+
+Enable an OMP provider, open the sidebar's project picker, and right-click the project.
+Choose **Import Herdr OMP sessions**. In the folder sidebar, the same action is available
+by right-clicking the project folder.
+
+The server reads its `~/.config/herdr/session.json` and imports only current OMP references
+whose workspace matches that project. It copies each native session into private snapshots
+under T3 Code's state directory, preserving the active branch and visible conversation text.
+Import does not start OMP or make model calls. Imported threads use **Supervised** permissions;
+historical tool cards, image attachments, and thinking blocks are not reconstructed in the UI.
+
+Herdr remains authoritative. Continuing an imported thread changes only T3 Code's private
+copy, never the original Herdr session. Changes are checked only when you choose
+**Import Herdr OMP sessions** again, not when opening a thread or in the background.
+
+If either conversation has advanced or the histories diverge, import offers to restore
+Herdr's history into the same T3 thread. You can decline without changing that thread.
+Accepting replaces its conversation and native OMP context with Herdr's current branch;
+displaced T3-only work is preserved in a separate **before Herdr reimport** thread.
+The thread keeps its project, title, and pinned state. Histories are never merged.
+Busy threads cannot be restored. Import rechecks both versions before restoring and
+refuses stale confirmations; choose import again to review the latest versions.
+
+Copies isolate conversation history, not workspace files. Don't run both copies against the
+same working tree at once. Files larger than 256 MiB fail explicitly rather than importing
+truncated history.
 
 The integration was informed by [Pivot](https://github.com/13kparkin/Pivot)'s OMP work and uses
 T3 Code's current provider architecture. The adapted OMP protocol decoder's MIT notice is in

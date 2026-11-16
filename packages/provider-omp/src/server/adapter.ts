@@ -57,6 +57,7 @@ import {
 import { makeOmpMcpBridge, type OmpMcpBridge } from "./mcpBridge.ts";
 import { makeOmpRpcConnection, parseOmpModelSlug } from "./rpc.ts";
 import { makeOmpUi } from "./ui.ts";
+import { makeOmpBackgroundQuestions } from "./backgroundQuestions.ts";
 
 const decodeOmpSettings = Schema.decodeSync(OmpSettings);
 
@@ -306,6 +307,10 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           permit.withPermits(1)(
             Effect.gen(function* () {
               yield* idle();
+              if (background.busy())
+                return yield* protocolError(
+                  "Cancel the background question before changing the OMP session",
+                );
               changingSession = true;
             }),
           ),
@@ -315,6 +320,17 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
               changingSession = false;
             }),
         );
+      const background = yield* makeOmpBackgroundQuestions({
+        request,
+        error: protocolError,
+        lock: permit.withPermits(1),
+        check: Effect.fn("OmpAdapter.checkBackgroundThread")(function* (wanted) {
+          if (closed || changingSession || !ensureHosted(wanted))
+            return yield* protocolError(
+              "OMP background question requested for an unavailable thread",
+            );
+        }),
+      });
       const captureState = Effect.fnUntraced(function* () {
         const state = yield* request({ type: "get_state" });
         const file = string(state, "sessionFile");
@@ -479,6 +495,12 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
       let bridge: OmpMcpBridge | null = null;
       const handle = Effect.fnUntraced(function* (frame: OmpRecord) {
         if (closed) return;
+        if (
+          yield* background
+            .handle(frame)
+            .pipe(Effect.catch((cause) => background.fail(cause).pipe(Effect.as(true))))
+        )
+          return;
         if (bridge !== null && (yield* bridge.handle(frame))) return;
         if (frame.type === "available_commands_update") {
           yield* publishCommands(frame);
@@ -608,6 +630,7 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           permit.withPermits(1)(
             Effect.gen(function* () {
               if (closed) return;
+              yield* background.close();
               if (active !== null) active.failure = `OMP transport ended: ${cause.message}`;
               yield* finish("failed", true);
               yield* updateSession("error", "OMP transport ended unexpectedly.");
@@ -624,6 +647,7 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
             yield* permit.withPermits(1)(
               Effect.gen(function* () {
                 if (closed) return;
+                yield* background.close();
                 if (active !== null) active.failure = `OMP exited with code ${code}.`;
                 yield* finish("failed", true);
                 yield* ui.cancelAll();
@@ -640,6 +664,7 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           closed = true;
+          yield* background.close();
           yield* ui.cancelAll();
           yield* Queue.end(queue);
         }),
@@ -682,6 +707,18 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
       const applySelection = Effect.fn("OmpAdapter.applySelection")(function* (
         selection: ModelSelection,
       ) {
+        const thinking =
+          getModelSelectionStringOptionValue(selection, "thinking") ?? baselineThinking;
+        if (background.running()) {
+          if (
+            (appliedModel ?? "default") !== selection.model ||
+            (appliedThinking ?? baselineThinking) !== thinking
+          )
+            return yield* protocolError(
+              "Cancel the background question before changing the OMP model or thinking level",
+            );
+          return;
+        }
         if (appliedModel !== selection.model) {
           const model =
             selection.model === "default" ? baselineModel : parseOmpModelSlug(selection.model);
@@ -695,13 +732,11 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           appliedModel = selection.model;
           session = { ...session, model: selection.model };
         }
-        const thinking =
-          getModelSelectionStringOptionValue(selection, "thinking") ?? baselineThinking;
         if (thinking !== appliedThinking) {
           yield* request({ type: "set_thinking_level", level: thinking });
           appliedThinking = thinking;
         }
-      });
+      }, permit.withPermits(1));
       const register = Effect.fn("OmpAdapter.ensureThread")(function* (
         threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput,
         publish = true,
@@ -725,6 +760,7 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           );
           if (field(result, "cancelled") === true)
             return yield* protocolError("An OMP extension cancelled the session transition");
+          yield* background.reset();
           thread = null;
           appliedModel = null;
           appliedThinking = null;
@@ -832,9 +868,11 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           return session;
         },
         events: Stream.fromQueue(queue),
+        backgroundQuestions: background.api,
         hasPendingBackgroundWork: Effect.sync(
           () =>
             !settled ||
+            background.busy() ||
             Array.from(subagentOwners.values()).some((owner) => owner.hasLiveSubagents()),
         ),
         hasPendingBackgroundWorkForThread: (wanted) =>
@@ -1084,6 +1122,7 @@ export const makeOmpAdapterV2 = Effect.fn("makeOmpAdapterV2")(function* (
           const result = yield* lifecycle(command);
           if (field(result, "cancelled") === true)
             return yield* protocolError("An OMP extension cancelled rollback");
+          yield* background.reset();
           const state = yield* captureState();
           const kept = yield* readBranch();
           const keptIds = new Set(kept.map((entry) => entry.id));

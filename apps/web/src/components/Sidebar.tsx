@@ -123,6 +123,7 @@ import {
 } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
+import { useImportHerdrSessions } from "../hooks/useImportHerdrSessions";
 import { useTerminalFocus } from "../hooks/useTerminalFocus";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
@@ -1207,6 +1208,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (isMobile) setOpenMobile(false);
     void handleNewThread(scopeProjectRef(group.environmentId, group.id));
   });
+  const importHerdrSessions = useImportHerdrSessions();
   const handleProjectFolderContextMenu = useStableCallback(
     (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
       const api = readLocalApi();
@@ -1217,6 +1219,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             [
               { id: "new-thread", label: "New thread" },
               { id: "copy-path", label: "Copy path" },
+              {
+                id: "import-herdr-omp",
+                label: "Import Herdr OMP sessions",
+                disabled: !readEnvironmentScope(group.environmentId, AuthOrchestrationOperateScope),
+              },
               { id: "project-settings", label: "Project settings", icon: "settings" },
             ],
             position,
@@ -1230,6 +1237,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "copy-path":
             copyPathToClipboard(group.workspaceRoot, { path: group.workspaceRoot });
             return;
+          case "import-herdr-omp": {
+            await importHerdrSessions(
+              scopeProjectRef(group.environmentId, group.id),
+              group.workspaceRoot,
+            );
+            return;
+          }
           case "project-settings":
             openProjectSettings(group);
             return;
@@ -2692,7 +2706,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 threadId: threadRef.threadId,
                 followUp: toggleThreadFollowUp(
                   thread.followUp,
-                  clicked.value === "toggle-waiting-on-others" ? "waiting-on-others" : "circle-back",
+                  clicked.value === "toggle-waiting-on-others"
+                    ? "waiting-on-others"
+                    : "circle-back",
                 ),
               },
             });
@@ -3050,7 +3066,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             // The icon badge marks selection; Base UI's single value would shade one row.
                             data-selected={undefined}
                             onContextMenu={(event) => {
-                              if (project) handleProjectSettings(event, project);
+                              event.preventDefault();
+                              event.stopPropagation();
+                              if (project)
+                                handleProjectFolderContextMenu(project, {
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                });
                             }}
                           >
                             <ProjectScopeRowIcon isSelected={isSelected}>

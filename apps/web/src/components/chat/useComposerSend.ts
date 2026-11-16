@@ -15,6 +15,7 @@ import {
   makeThreadErrorSetter,
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
+import { parseBackgroundQuestionCommand } from "@t3tools/client-runtime/state/backgroundQuestionController";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
@@ -161,6 +162,7 @@ type TimelineFollow = ReturnType<typeof useTimelineFollow>;
 
 interface ComposerSendInput {
   readonly environmentId: EnvironmentId;
+  readonly onBackgroundCommand: (text: string) => Promise<boolean>;
   readonly routeThreadKey: string;
   readonly currentRouteThreadKeyRef: { readonly current: string | null };
   readonly draftId: DraftId | null;
@@ -404,6 +406,19 @@ export function useComposerSend(input: ComposerSendInput) {
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = promptRef.current;
+    if (!directAnnotation && parseBackgroundQuestionCommand(promptAtSend)) {
+      const accepted = await input.onBackgroundCommand(promptAtSend);
+      if (
+        accepted &&
+        currentRouteThreadKeyRef.current === routeThreadKey &&
+        promptRef.current === promptAtSend
+      ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
     if (
       usageLimitsOffered &&
       usageLimitsKey !== null &&

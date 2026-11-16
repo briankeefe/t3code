@@ -68,6 +68,24 @@ describe("mobile slash commands", () => {
     slashCommands: [{ name: "plan", description: "Plan with Antigravity" }],
   };
 
+  it("offers background commands only for OMP at the start of a saved thread", () => {
+    const commands = (driver: string, atMessageStart = true, hasThread = true) =>
+      buildComposerSlashCommandItems({
+        query: "",
+        atMessageStart,
+        hasThread,
+        allowInteractionMode: false,
+        selectedProviderStatus: {
+          driver: ProviderDriverKind.make(driver),
+          slashCommands: [{ name: "pulse", description: "Native pulse" }],
+        },
+      }).filter((item) => item.label === "/btw" || item.label === "/pulse");
+    expect(commands("omp").map((item) => item.label)).toEqual(["/btw", "/pulse"]);
+    expect(commands("codex")).toEqual([]);
+    expect(commands("omp", false)).toEqual([]);
+    expect(commands("omp", true, false)).toEqual([]);
+  });
+
   it.each([false, true])(
     "keeps native /plan with legacy mode enabled=%s",
     (allowInteractionMode) => {

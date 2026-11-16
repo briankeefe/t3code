@@ -161,6 +161,12 @@ Open **Pull requests** to review changes and comments, request reviewers, check 
 or merge. You can edit review titles and descriptions and your own comments where the host allows it.
 GitLab calls these merge requests.
 
+On web and desktop, **Execute PR review** in a pull request's menu prepares an `execute pr review`
+command with that pull request's URL. Choose **Execute PR review + sanity check** to also assess
+the implementation against its requirements. These actions require the execute skill in your
+agent runtime. They add to the current composer or open a project draft; read the command and
+send it to start. Choosing either action does not check out the branch or publish a review.
+
 On mobile, **Pull requests** lists reviews across your connected environments. Open a review
 to read its description, activity, commits, and changed files. Line comments stay as drafts
 until you submit the review. **Work on PR** opens a chat with the review attached; sending

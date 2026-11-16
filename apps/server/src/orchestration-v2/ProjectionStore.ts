@@ -744,6 +744,20 @@ export function applyToProjection(
   };
 
   switch (event.type) {
+    case "thread.history-reset":
+      return emptyProjection({ ...event, type: "thread.created" });
+    case "thread.fork-source-updated":
+      return projection.thread.forkedFrom?.type === "run" &&
+        projection.thread.forkedFrom.threadId === event.payload.fromThreadId
+        ? {
+            ...projection,
+            thread: {
+              ...projection.thread,
+              forkedFrom: { ...projection.thread.forkedFrom, threadId: event.payload.toThreadId },
+              lineage: { ...projection.thread.lineage, parentThreadId: event.payload.toThreadId },
+            },
+          }
+        : projection;
     case "thread.pull-request-link-updated":
       return {
         ...projection,
@@ -1835,6 +1849,50 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       Effect.fnUntraced(
         function* (event) {
           switch (event.type) {
+            case "thread.fork-source-updated": {
+              const thread = yield* getThread(event.threadId);
+              if (
+                thread.forkedFrom?.type === "run" &&
+                thread.forkedFrom.threadId === event.payload.fromThreadId
+              )
+                yield* apply({
+                  ...event,
+                  type: "thread.metadata-updated",
+                  payload: {
+                    ...thread,
+                    forkedFrom: { ...thread.forkedFrom, threadId: event.payload.toThreadId },
+                    lineage: { ...thread.lineage, parentThreadId: event.payload.toThreadId },
+                  },
+                });
+              break;
+            }
+            case "thread.history-reset": {
+              // Keep the event journal; replace only this thread's materialized conversation.
+              for (const table of [
+                "runs",
+                "run_attempts",
+                "nodes",
+                "subagents",
+                "provider_sessions",
+                "provider_session_bindings",
+                "provider_threads",
+                "provider_turns",
+                "runtime_requests",
+                "messages",
+                "plans",
+                "turn_items",
+                "checkpoint_scopes",
+                "checkpoints",
+                "context_handoffs",
+              ]) {
+                yield* sql`DELETE FROM ${sql(`orchestration_v2_projection_${table}`)}
+                  WHERE thread_id = ${event.threadId}`;
+              }
+              yield* sql`DELETE FROM orchestration_v2_projection_context_transfers
+                WHERE source_thread_id = ${event.threadId} OR target_thread_id = ${event.threadId}`;
+              yield* apply({ ...event, type: "thread.metadata-updated" });
+              break;
+            }
             case "thread.pull-request-link-updated": {
               const thread = yield* getThread(event.threadId);
               yield* apply({
@@ -2651,6 +2709,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
           if (
             event.type !== "thread.created" &&
+            event.type !== "thread.fork-source-updated" &&
             event.type !== "thread.archived" &&
             event.type !== "thread.unarchived" &&
             event.type !== "thread.deleted" &&

@@ -143,7 +143,23 @@ export function buildComposerSlashCommandItems(input: {
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction.
   if (!input.atMessageStart) return items;
+  if (input.hasThread && input.selectedProviderStatus?.driver === "omp") {
+    for (const command of [
+      { name: "btw", description: "Ask a background question or open saved answers" },
+      { name: "pulse", description: "Check agent health without interrupting its work" },
+    ]) {
+      if (!command.name.includes(query)) continue;
+      items.push({
+        id: `pcmd:${command.name}`,
+        type: "provider-slash-command",
+        command,
+        label: `/${command.name}`,
+        description: command.description,
+      });
+    }
+  }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
+    if (command.name === "btw" || command.name === "pulse") continue;
     if (!command.name.toLowerCase().includes(query)) continue;
     if (command.name === "compact" && !input.hasCompactableConversation) continue;
     if (command.name === USAGE_LIMITS_COMMAND.name && input.offersUsageLimits && !input.hasThread) {

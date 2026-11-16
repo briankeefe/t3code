@@ -43,6 +43,7 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { parseBackgroundQuestionCommand } from "@t3tools/client-runtime/state/backgroundQuestionController";
 import * as Schema from "effect/Schema";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
@@ -914,13 +915,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.snapshot,
     selectedModel,
   );
-  const sendDisabledReason =
-    externalSendDisabledReason ??
-    (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
-    (activePendingProgress
-      ? attachmentBlockReason
-      : (attachmentBlockReason ??
-        (multipleModelSelections === null ? providerSendBlockReason : null)));
+  const isBackgroundCommand = parseBackgroundQuestionCommand(prompt) !== null;
+  const sendDisabledReason = isBackgroundCommand
+    ? !canOperateThread
+      ? "This connection cannot change threads."
+      : null
+    : (externalSendDisabledReason ??
+      (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
+      (activePendingProgress
+        ? attachmentBlockReason
+        : (attachmentBlockReason ??
+          (multipleModelSelections === null ? providerSendBlockReason : null))));
   const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = selectedProviderEntry?.snapshot ?? null;
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
@@ -1220,8 +1225,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const showResumeAction =
     canResume && !composerDraftHasUserContent(composerDraft) && !isEditingQueuedMessage;
   const collapsedComposerPrimaryActionDisabled =
-    phase === "running" ||
-    isSendBusy ||
+    (!isBackgroundCommand && (phase === "running" || isSendBusy)) ||
     isSendDisabled ||
     noProviderAvailable ||
     projectSelectionRequired ||
@@ -2045,6 +2049,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    if (parseBackgroundQuestionCommand(promptRef.current)) {
+      event?.preventDefault();
+      onSend(event);
+      return;
+    }
     if (
       noProviderAvailable ||
       isSendDisabled ||
@@ -3454,8 +3463,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     reserveContextWindowMeter={reserveContextWindowMeter}
                     activeThreadModelDisplayName={activeThreadModelDisplayName}
-                    pendingAction={pendingPrimaryAction}
-                    isRunning={phase === "running"}
+                    pendingAction={isBackgroundCommand ? null : pendingPrimaryAction}
+                    isRunning={phase === "running" && !isBackgroundCommand}
                     canInterrupt={canInterrupt}
                     followUpBehavior={followUpBehavior}
                     canSteer={!isCompacting}
@@ -3475,27 +3484,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       },
                     )}
                     showPlanFollowUpPrompt={
-                      pendingUserInputs.length === 0 && showPlanFollowUpPrompt
+                      !isBackgroundCommand &&
+                      pendingUserInputs.length === 0 &&
+                      showPlanFollowUpPrompt
                     }
                     promptHasText={prompt.trim().length > 0}
-                    isSendBusy={isSendBusy}
+                    isSendBusy={isSendBusy && !isBackgroundCommand}
                     sendDisabledReason={sendDisabledReason}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
                       noProviderAvailable ||
                       projectSelectionRequired
                     }
-                    isPreparingWorktree={isPreparingWorktree}
+                    isPreparingWorktree={isPreparingWorktree && !isBackgroundCommand}
                     hasSendableContent={composerSendState.hasSendableContent}
                     canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
-                    isEditingQueuedMessage={isEditingQueuedMessage}
+                    isEditingQueuedMessage={isEditingQueuedMessage && !isBackgroundCommand}
                     onSubmitMessage={handleSubmitMessageStable}
                     onResume={onResume}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryActionStable}
-                    compactBeforeSendTokens={props.resumeCompactionTokens}
+                    compactBeforeSendTokens={
+                      isBackgroundCommand ? null : props.resumeCompactionTokens
+                    }
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                     compactDisabled={compactDisabled || noProviderAvailable || isSendBusy}

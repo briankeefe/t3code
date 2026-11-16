@@ -1720,7 +1720,7 @@ function ImportRowMeta({
   threadCount,
   lastActiveAt,
 }: {
-  readonly sources: ReadonlyArray<"claudeAgent" | "codex"> | null;
+  readonly sources: ReadonlyArray<"claudeAgent" | "codex" | "omp"> | null;
   readonly threadCount: number;
   readonly lastActiveAt: string | null;
 }) {
@@ -1745,6 +1745,15 @@ function ImportRowMeta({
             <ProviderInstanceIcon
               driverKind={ProviderDriverKind.make("codex")}
               displayName="Codex"
+              iconClassName="size-3"
+            />
+          </span>
+        ) : null}
+        {sources?.includes("omp") ? (
+          <span role="img" aria-label="OMP">
+            <ProviderInstanceIcon
+              driverKind={ProviderDriverKind.make("omp")}
+              displayName="OMP"
               iconClassName="size-3"
             />
           </span>

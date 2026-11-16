@@ -130,14 +130,15 @@ open.
 
 ### Agent status circles
 
-The circle beside each thread shows its current status: solid amber means working
-or monitoring; solid pink-red means an answer, approval, guest request, or usage
-limit needs attention, or the agent failed. Solid green means an unread completion.
-Outlined green means idle or already read.
+The circle beside each thread shows its current status: solid amber means working;
+solid white means waiting on background work or monitoring without an active agent
+turn. Solid pink-red means an answer, approval, guest request, or usage limit needs
+attention, or the agent failed. Solid green means an unread completion. Outlined
+green means idle or already read.
 
 Choose **Waiting on someone else** from a thread's menu when progress depends on
 someone outside the thread. Choose **Will circle back** when you want to return to
-it later. These turn the existing circle solid purple or blue, respectively; they
+it later. These turn the existing circle solid purple or cyan, respectively; they
 never add another circle. Choosing one replaces the other.
 
 Both marks are saved across reloads and connected devices. Reading, visiting,
@@ -156,7 +157,8 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
-This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
+This is off by default, so agent activity doesn't move threads out of their usual
+positions. Turn it on with **Settings → General → Working section** on web and desktop,
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 

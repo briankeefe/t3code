@@ -1,11 +1,20 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EventId,
+  MessageId,
+  TurnItemId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   type ApplicationStoredEvent,
+  type AgentSessionImportInput,
   type OrchestrationV2AppThread,
   type OrchestrationV2ProviderThread,
 } from "@t3tools/contracts";
@@ -24,6 +33,7 @@ import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import {
   CLAUDE_MODEL_SELECTION,
   CODEX_MODEL_SELECTION,
@@ -164,7 +174,12 @@ const seedOwner = Effect.fn(function* (
 const makeImporter = Effect.fn(function* (
   candidates: ReadonlyArray<ReturnType<typeof candidate>>,
   beforeTransaction: Effect.Effect<void> = Effect.void,
+  input: Omit<AgentSessionImportInput, "projectId"> = {},
+  workspaceRoot = "/workspace/project",
 ) {
+  const config = yield* Effect.serviceOption(ServerConfig.ServerConfig);
+  const settings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+  const home = yield* HostProcess.HomeDirectory;
   const sql = yield* SqlClient.SqlClient;
   const events = yield* EventStore.EventStoreV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -194,11 +209,22 @@ const makeImporter = Effect.fn(function* (
       ),
     ),
   );
+  const sink = Context.get(yield* Layer.build(sinkLayer), EventSink.EventSinkV2);
   const context = yield* Layer.build(
     AgentSessionImporter.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          sinkLayer,
+          Layer.succeed(EventSink.EventSinkV2, sink),
+          Layer.succeed(ProjectionStore.ProjectionStoreV2, projections),
+          Layer.succeed(SqlClient.SqlClient, importSql),
+          ThreadCommandExecutor.layer,
+          Option.isSome(config)
+            ? Layer.succeed(ServerConfig.ServerConfig, config.value)
+            : ServerConfig.layerTest("/workspace/project", { prefix: "t3-importer-test-" }),
+          Option.isSome(settings)
+            ? Layer.succeed(ServerSettings.ServerSettingsService, settings.value)
+            : ServerSettings.layerTest(),
+          Layer.succeed(HostProcess.HomeDirectory, home),
           Layer.succeed(IdAllocator.IdAllocatorV2, yield* IdAllocator.IdAllocatorV2),
           Layer.succeed(
             ProviderSessionRuntime.ProviderSessionRuntimeRepository,
@@ -212,7 +238,7 @@ const makeImporter = Effect.fn(function* (
               Effect.succeedSome({
                 id: projectId,
                 title: "Project",
-                workspaceRoot: "/workspace/project",
+                workspaceRoot,
                 defaultModelSelection: null,
                 scripts: [],
                 createdAt: timestamp,
@@ -232,10 +258,16 @@ const makeImporter = Effect.fn(function* (
           }),
         ),
       ),
+      Layer.provide(NodeServices.layer),
     ),
   );
   const importer = Context.get(context, AgentSessionImporter.AgentSessionImporter);
-  return { run: importer.importRecentAgentThreads({ projectId }), published };
+  return {
+    run: importer.importRecentAgentThreads({ projectId, ...input }),
+    import: importer.importRecentAgentThreads,
+    write: sink.write,
+    published,
+  };
 });
 
 it.effect(
@@ -385,4 +417,306 @@ it.effect(
         runtimePayload: { importedTranscripts: [source.source] },
       });
     }).pipe(Effect.scoped, Effect.provide(persistence)),
+);
+
+it.effect(
+  "imports private Herdr snapshots and reports divergence without overwriting local history",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const workspaceRoot = path.join(home, "workspace");
+      yield* fs.makeDirectory(workspaceRoot);
+      const original = path.join(home, "native.jsonl");
+      const registry = path.join(home, ".config", "herdr");
+      const content =
+        [
+          { type: "session", version: 3, id: "synthetic-omp", cwd: workspaceRoot, timestamp },
+          {
+            type: "message",
+            id: "user",
+            parentId: null,
+            timestamp,
+            message: { role: "user", content: [{ type: "text", text: "Synthetic request" }] },
+          },
+          {
+            type: "message",
+            id: "assistant",
+            parentId: "user",
+            timestamp,
+            message: { role: "assistant", content: [{ type: "text", text: "Synthetic response" }] },
+          },
+        ]
+          .map((record) => JSON.stringify(record))
+          .join("\n") + "\n";
+      yield* fs.writeFileString(original, content);
+      yield* fs.makeDirectory(registry, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(registry, "session.json"),
+        JSON.stringify({
+          workspaces: [
+            {
+              tabs: [
+                {
+                  custom_name: "Synthetic title",
+                  panes: {
+                    main: {
+                      cwd: workspaceRoot,
+                      agent_session: {
+                        source: "herdr:omp",
+                        agent: "omp",
+                        kind: "path",
+                        value: original,
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      yield* Effect.gen(function* () {
+        const importer = yield* makeImporter([], Effect.void, { source: "herdr" }, workspaceRoot);
+        expect(yield* importer.run).toEqual({ importedCount: 1, skippedCount: 0 });
+        const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+        const rows = yield* runtimes.list();
+        expect(rows).toHaveLength(1);
+        const row = rows[0]!;
+        expect(row.runtimeMode).toBe("approval-required");
+        const cursor = row.resumeCursor;
+        if (
+          cursor === null ||
+          typeof cursor !== "object" ||
+          !("sessionFile" in cursor) ||
+          typeof cursor.sessionFile !== "string"
+        ) {
+          throw new Error("Expected an OMP native sessionFile cursor");
+        }
+        const snapshot = cursor.sessionFile;
+        expect(snapshot).not.toBe(original);
+        expect(yield* fs.readFileString(snapshot)).toBe(content);
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const records = yield* projections.getThreadRecords(row.threadId, [
+          "messages",
+          "providerThreads",
+        ]);
+        expect(records.thread.runtimeMode).toBe("approval-required");
+        expect(records.messages.map((message) => message.text)).toEqual([
+          "Synthetic request",
+          "Synthetic response",
+        ]);
+        expect(records.providerThreads[0]?.nativeThreadRef).toMatchObject({
+          driver: "omp",
+          nativeId: snapshot,
+        });
+        const events = yield* EventStore.EventStoreV2;
+        let committed = yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect);
+        expect(committed).toHaveLength(6);
+        const continued =
+          content +
+          JSON.stringify({
+            type: "message",
+            id: "continued",
+            parentId: "assistant",
+            timestamp,
+            message: { role: "user", content: [{ type: "text", text: "Synthetic continuation" }] },
+          }) +
+          "\n";
+        yield* fs.writeFileString(snapshot, continued);
+        const before = yield* projections.getThreadProjection(row.threadId);
+        const firstUserItem = before.turnItems.find((item) => item.type === "user_message")!;
+        yield* importer.write({
+          events: [
+            {
+              id: EventId.make("t3-custom-title"),
+              type: "thread.metadata-updated",
+              threadId: row.threadId,
+              occurredAt: now,
+              payload: { ...before.thread, title: "My T3 title", pinnedAt: now },
+            },
+            {
+              id: EventId.make("t3-local-message"),
+              type: "message.updated",
+              threadId: row.threadId,
+              occurredAt: now,
+              payload: {
+                ...before.messages[0]!,
+                id: MessageId.make("t3-local-message"),
+                text: "Synthetic continuation",
+              },
+            },
+            {
+              id: EventId.make("t3-local-item"),
+              type: "turn-item.updated",
+              threadId: row.threadId,
+              occurredAt: now,
+              payload: {
+                ...firstUserItem,
+                id: TurnItemId.make("t3-local-item"),
+                messageId: MessageId.make("t3-local-message"),
+                text: "Synthetic continuation",
+                ordinal: 3,
+              },
+            },
+          ],
+        });
+        committed = yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect);
+        expect(yield* importer.run).toMatchObject({
+          importedCount: 1,
+          skippedCount: 0,
+          herdrChanges: [{ relationship: "t3_ahead" }],
+        });
+        expect(yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect)).toEqual(
+          committed,
+        );
+        expect(yield* fs.readFileString(snapshot)).toBe(continued);
+        expect(yield* runtimes.list()).toHaveLength(1);
+        expect(yield* fs.readFileString(original)).toBe(content);
+        yield* fs.writeFileString(
+          original,
+          content +
+            JSON.stringify({
+              type: "message",
+              id: "herdr-continued",
+              parentId: "assistant",
+              timestamp,
+              message: { role: "user", content: [{ type: "text", text: "Herdr continuation" }] },
+            }) +
+            "\n",
+        );
+        const preview = yield* importer.run;
+        expect(preview).toMatchObject({
+          herdrChanges: [{ threadId: row.threadId, relationship: "diverged" }],
+        });
+        expect(yield* fs.readFileString(snapshot)).toBe(continued);
+        expect(yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect)).toEqual(
+          committed,
+        );
+        const sql = yield* SqlClient.SqlClient;
+        const snapshotDirectory = path.dirname(snapshot);
+        const filesBefore = yield* fs.readDirectory(snapshotDirectory);
+        const activeProvider = records.providerThreads[0]!;
+        yield* importer.write({
+          events: [
+            {
+              id: EventId.make("herdr-busy"),
+              type: "provider-thread.updated",
+              threadId: row.threadId,
+              occurredAt: now,
+              payload: {
+                ...activeProvider,
+                pendingBackgroundTasks: [{ kind: "subagent", taskId: "busy-child" }],
+              },
+            },
+          ],
+        });
+        const busy = yield* importer.import({
+          projectId,
+          source: "herdr",
+          reimport: preview.herdrChanges,
+        });
+        expect(busy.reimportedCount).toBeUndefined();
+        expect(busy.herdrChanges?.[0]?.blockedReason).not.toBeNull();
+        yield* importer.write({
+          events: [
+            {
+              id: EventId.make("herdr-idle"),
+              type: "provider-thread.updated",
+              threadId: row.threadId,
+              occurredAt: now,
+              payload: activeProvider,
+            },
+          ],
+        });
+        committed = yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect);
+        const stale = yield* importer.import({
+          projectId,
+          source: "herdr",
+          reimport: [{ ...preview.herdrChanges![0]!, sourceVersion: "stale" }],
+        });
+        expect(stale.reimportedCount).toBeUndefined();
+        expect(stale.herdrChanges?.[0]?.blockedReason).not.toBeNull();
+        yield* sql`CREATE TRIGGER fail_herdr_refresh BEFORE UPDATE OF resume_cursor_json ON provider_session_runtime BEGIN SELECT RAISE(FAIL, 'reject refresh'); END`;
+        const failed = yield* importer.import({
+          projectId,
+          source: "herdr",
+          reimport: preview.herdrChanges,
+        });
+        expect(failed.reimportedCount).toBeUndefined();
+        expect(failed.herdrChanges?.[0]?.blockedReason).not.toBeNull();
+        expect(yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect)).toEqual(
+          committed,
+        );
+        expect(yield* runtimes.list()).toHaveLength(1);
+        expect((yield* fs.readDirectory(snapshotDirectory)).sort()).toEqual(filesBefore.sort());
+        expect(yield* fs.readFileString(snapshot)).toBe(continued);
+        yield* sql`DROP TRIGGER fail_herdr_refresh`;
+        const refreshed = yield* importer.import({
+          projectId,
+          source: "herdr",
+          reimport: preview.herdrChanges,
+        });
+        expect(refreshed).toMatchObject({ reimportedCount: 1 });
+        const savedId = refreshed.preservedThreadIds![0]!;
+        const refreshedRecords = yield* projections.getThreadRecords(row.threadId, [
+          "messages",
+          "providerThreads",
+          "runs",
+        ]);
+        expect(refreshedRecords.messages.map((message) => message.text)).toEqual([
+          "Synthetic request",
+          "Synthetic response",
+          "Herdr continuation",
+        ]);
+        expect(refreshedRecords.thread.title).toBe("My T3 title");
+        expect(refreshedRecords.thread.pinnedAt).toEqual(now);
+        expect(refreshedRecords.thread.projectId).toBe(records.thread.projectId);
+        const refreshedRuntime = Option.getOrThrow(
+          yield* runtimes.getByThreadId({ threadId: row.threadId }),
+        );
+        const sourceFile = refreshedRecords.providerThreads[0]!.nativeThreadRef!.nativeId!;
+        expect(refreshedRuntime.resumeCursor).toEqual({ sessionFile: sourceFile });
+        expect(yield* fs.readFileString(sourceFile)).toBe(yield* fs.readFileString(original));
+        const savedRecords = yield* projections.getThreadRecords(savedId, [
+          "messages",
+          "providerThreads",
+        ]);
+        expect(savedRecords.messages.map((message) => message.text)).toEqual([
+          "Synthetic request",
+          "Synthetic response",
+          "Synthetic continuation",
+        ]);
+        const savedRuntime = Option.getOrThrow(
+          yield* runtimes.getByThreadId({ threadId: savedId }),
+        );
+        const savedFile = savedRecords.providerThreads[0]!.nativeThreadRef!.nativeId!;
+        expect(savedRuntime.resumeCursor).toEqual({ sessionFile: savedFile });
+        expect(yield* fs.readFileString(savedFile)).toBe(continued);
+        const refreshedEvents = yield* events
+          .read({ threadId: row.threadId })
+          .pipe(Stream.runCollect);
+        expect(yield* importer.run).toEqual({ importedCount: 1, skippedCount: 0 });
+        expect(yield* events.read({ threadId: row.threadId }).pipe(Stream.runCollect)).toEqual(
+          refreshedEvents,
+        );
+        expect(yield* runtimes.list()).toHaveLength(2);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcess.HomeDirectory, home),
+            ServerConfig.layerTest(home, path.join(home, "t3")),
+            ServerSettings.layerTest({
+              providerInstances: {
+                [ProviderInstanceId.make("omp")]: {
+                  driver: ProviderDriverKind.make("omp"),
+                  enabled: true,
+                },
+              },
+            }),
+          ),
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(persistence, NodeServices.layer))),
 );

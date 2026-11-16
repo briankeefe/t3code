@@ -23,7 +23,11 @@ it("keeps a previous unread completion from masking a new request, and clears th
   expect(workingColor).toBe("rgb(224, 175, 104)");
 
   await screen.rerender(<SidebarAgentStatus status="waiting" unread />);
-  expect(circle().stroke).toBe(workingColor);
+  await expect.element(screen.getByRole("img", { name: "Agent: Monitoring" })).toBeVisible();
+  expect(circle().stroke).toBe("rgb(255, 255, 255)");
+  expect(circle().fill).toBe("rgb(255, 255, 255)");
+
+  await screen.rerender(<SidebarAgentStatus status="working" unread />);
   expect(circle().fill).toBe(workingColor);
 
   await screen.rerender(<SidebarAgentStatus status="ready" unread={false} />);
@@ -34,7 +38,7 @@ it("keeps a previous unread completion from masking a new request, and clears th
 
 it.each([
   ["waiting-on-others", "Waiting on someone else", "rgb(187, 154, 247)"],
-  ["circle-back", "Will circle back", "rgb(122, 162, 247)"],
+  ["circle-back", "Will circle back", "rgb(34, 211, 238)"],
 ] as const)(
   "uses one circle for %s, with attention overriding it until resolved",
   async (followUp, label, color) => {

@@ -268,7 +268,9 @@ export const make = Effect.gen(function* () {
                   WHEN type = 'object' THEN
                     json_extract(value, '$.providerInstanceId')
                       IS NOT json_extract(${source}, '$.providerInstanceId')
-                    OR json_extract(value, '$.filePath') IS NOT json_extract(${source}, '$.filePath')
+                    OR CASE WHEN json_extract(${source}, '$.herdr.filePath') IS NOT NULL
+                      THEN json_extract(value, '$.providerSessionId') IS NOT json_extract(${source}, '$.providerSessionId')
+                      ELSE json_extract(value, '$.filePath') IS NOT json_extract(${source}, '$.filePath') END
                   ELSE 0
                 END
                 UNION ALL

@@ -7,6 +7,14 @@ import {
 } from "./orchestrationV2.ts";
 import { OrchestrationDispatchCommandError } from "./orchestrationDispatch.ts";
 import {
+  BackgroundQuestionAskInput,
+  BackgroundQuestionCancelInput,
+  BackgroundQuestionError,
+  BackgroundQuestionInput,
+  BackgroundQuestionRecord,
+  BackgroundQuestionSnapshot,
+} from "./backgroundQuestions.ts";
+import {
   McpAppCallToolInput,
   McpAppCallToolResult,
   McpAppReadResourceInput,
@@ -424,6 +432,10 @@ export const WS_METHODS = {
   mcpAppsToolInfo: "mcpApps.toolInfo",
   mcpAppsReadResource: "mcpApps.readResource",
   mcpAppsUpdateModelContext: "mcpApps.updateModelContext",
+  backgroundQuestionsHistory: "backgroundQuestions.history",
+  backgroundQuestionsAsk: "backgroundQuestions.ask",
+  backgroundQuestionsCancel: "backgroundQuestions.cancel",
+  backgroundQuestionsSubscribe: "backgroundQuestions.subscribe",
 
   providerUploadFeedback: "provider.uploadFeedback",
   providerAuthStart: "provider.auth.start",
@@ -1402,6 +1414,28 @@ const WsMcpAppsReadResourceRpc = Rpc.make(WS_METHODS.mcpAppsReadResource, {
   error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsBackgroundQuestionsHistoryRpc = Rpc.make(WS_METHODS.backgroundQuestionsHistory, {
+  payload: BackgroundQuestionInput,
+  success: BackgroundQuestionSnapshot,
+  error: Schema.Union([BackgroundQuestionError, EnvironmentAuthorizationError]),
+});
+const WsBackgroundQuestionsAskRpc = Rpc.make(WS_METHODS.backgroundQuestionsAsk, {
+  payload: BackgroundQuestionAskInput,
+  success: BackgroundQuestionRecord,
+  error: Schema.Union([BackgroundQuestionError, EnvironmentAuthorizationError]),
+});
+const WsBackgroundQuestionsCancelRpc = Rpc.make(WS_METHODS.backgroundQuestionsCancel, {
+  payload: BackgroundQuestionCancelInput,
+  success: Schema.Struct({ cancelled: Schema.Boolean }),
+  error: Schema.Union([BackgroundQuestionError, EnvironmentAuthorizationError]),
+});
+const WsBackgroundQuestionsSubscribeRpc = Rpc.make(WS_METHODS.backgroundQuestionsSubscribe, {
+  payload: BackgroundQuestionInput,
+  success: BackgroundQuestionSnapshot,
+  stream: true,
+  error: Schema.Union([BackgroundQuestionError, EnvironmentAuthorizationError]),
+});
+
 const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
   payload: ProviderUploadFeedbackInput,
   success: ProviderUploadFeedbackResult,
@@ -2068,6 +2102,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsMcpAppsToolInfoRpc,
   WsMcpAppsReadResourceRpc,
   WsMcpAppsUpdateModelContextRpc,
+  WsBackgroundQuestionsHistoryRpc,
+  WsBackgroundQuestionsAskRpc,
+  WsBackgroundQuestionsCancelRpc,
+  WsBackgroundQuestionsSubscribeRpc,
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,

@@ -2,7 +2,7 @@ import type { OrchestrationV2FollowUp } from "@t3tools/contracts";
 
 const STATUS = {
   working: { label: "Working", color: "#e0af68", filled: true, manual: false },
-  waiting: { label: "Monitoring", color: "#e0af68", filled: true, manual: false },
+  waiting: { label: "Monitoring", color: "#ffffff", filled: true, manual: false },
   approval: { label: "Needs approval", color: "#f7768e", filled: true, manual: false },
   input: { label: "Needs input", color: "#f7768e", filled: true, manual: false },
   request: { label: "Guest request", color: "#f7768e", filled: true, manual: false },
@@ -23,7 +23,7 @@ const FOLLOW_UP = {
     filled: true,
     manual: true,
   },
-  "circle-back": { label: "Will circle back", color: "#7aa2f7", filled: true, manual: true },
+  "circle-back": { label: "Will circle back", color: "#22d3ee", filled: true, manual: true },
 } as const;
 
 export function resolveThreadStatusPresentation(

@@ -76,6 +76,8 @@ export interface EventSinkV2Shape {
     readonly guardPendingUserInputCancellations?: boolean;
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+    /** Persist related state in the same transaction, before publishing committed events. */
+    readonly persist?: Effect.Effect<void, unknown>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
   readonly writeWithEffects: (input: {
     /**
@@ -91,6 +93,7 @@ export interface EventSinkV2Shape {
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     readonly effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2>;
+    readonly persist?: Effect.Effect<void, unknown>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
   readonly writeIfRunCurrent: (input: {
     readonly guardPendingUserInputCancellations?: boolean;
@@ -448,6 +451,7 @@ const layerBase: Layer.Layer<
           });
           const outcomes = yield* applyStoredEvents(committed);
           yield* effectOutbox.enqueue(input.effects);
+          if (input.persist !== undefined) yield* input.persist;
           return { committed, outcomes };
         }).pipe(Effect.withTracerEnabled(false)),
         ({ committed, outcomes }) =>

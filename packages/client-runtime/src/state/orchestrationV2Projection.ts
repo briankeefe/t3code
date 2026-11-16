@@ -267,6 +267,39 @@ export function applyOrchestrationV2ProjectionEvent(
   const latestLocalTurnOrdinal = options?.latestLocalTurnOrdinal;
   const base = { ...projection, updatedAt: event.occurredAt };
   switch (event.type) {
+    case "thread.fork-source-updated":
+      return projection.thread.forkedFrom?.type === "run" &&
+        projection.thread.forkedFrom.threadId === event.payload.fromThreadId
+        ? {
+            ...projection,
+            thread: {
+              ...projection.thread,
+              forkedFrom: { ...projection.thread.forkedFrom, threadId: event.payload.toThreadId },
+              lineage: { ...projection.thread.lineage, parentThreadId: event.payload.toThreadId },
+            },
+          }
+        : projection;
+    case "thread.history-reset":
+      return {
+        thread: event.payload,
+        runs: [],
+        attempts: [],
+        nodes: [],
+        subagents: [],
+        providerSessions: [],
+        providerThreads: [],
+        providerTurns: [],
+        runtimeRequests: [],
+        messages: [],
+        plans: [],
+        turnItems: [],
+        checkpointScopes: [],
+        checkpoints: [],
+        contextHandoffs: [],
+        contextTransfers: [],
+        visibleTurnItems: [],
+        updatedAt: event.occurredAt,
+      };
     case "thread.pull-request-link-updated":
       return {
         ...base,

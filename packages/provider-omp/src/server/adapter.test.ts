@@ -12,6 +12,7 @@ import {
   RunId,
   ThreadId,
   type OrchestrationV2AppThread,
+  type BackgroundQuestionSnapshot,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -59,10 +60,14 @@ const setup = Effect.fnUntraced(function* () {
   const nativeEvents = yield* Queue.unbounded<OmpRpcRecord, OmpRpcError>();
   const emitted = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
   const frames: OmpRpcRecord[] = [];
+  const replies = new Map<string, unknown>();
   const attachmentStarted = yield* Deferred.make<void>();
   const attachmentRelease = yield* Deferred.make<void>();
   const abortStarted = yield* Deferred.make<void>();
   const abortRelease = yield* Deferred.make<void>();
+  const btwStarted = yield* Deferred.make<void>();
+  const btwRelease = yield* Deferred.make<void>();
+  let pauseBtw = false;
   let nativeFile = "/fake/omp-session.jsonl";
   let nativeThinking = "off";
   const connection: OmpRpcConnection = {
@@ -75,6 +80,12 @@ const setup = Effect.fnUntraced(function* () {
       }),
     request: (record) => {
       frames.push(record);
+      if (record.type === "btw" && pauseBtw)
+        return Deferred.succeed(btwStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(btwRelease)),
+          Effect.as(replies.get("btw")),
+        );
+      if (replies.has(String(record.type))) return Effect.succeed(replies.get(String(record.type)));
       switch (record.type) {
         case "get_state":
           return Effect.succeed({
@@ -91,6 +102,8 @@ const setup = Effect.fnUntraced(function* () {
           return Effect.succeed({ models: [] });
         case "get_entries":
           return Effect.succeed({ entries: [], leafId: null });
+        case "get_btw_history":
+          return Effect.succeed({ records: [] });
         case "switch_session":
           nativeFile = String(record.sessionPath);
           return Effect.succeed({});
@@ -215,6 +228,7 @@ const setup = Effect.fnUntraced(function* () {
   return {
     runtime,
     connection,
+    replies,
     providerThread,
     frames,
     start,
@@ -224,11 +238,271 @@ const setup = Effect.fnUntraced(function* () {
     attachmentRelease,
     abortStarted,
     abortRelease,
+    btwStarted,
+    btwRelease,
+    pauseBtw: () => {
+      pauseBtw = true;
+    },
     setNativeThinking: (level: string) => {
       nativeThinking = level;
     },
   };
 });
+
+it.effect("keeps BTW streaming and cancellation separate from an active main turn", () =>
+  Effect.gen(function* () {
+    const { runtime, providerThread, start, emit, take, frames, replies } = yield* setup();
+    assert.isDefined(runtime.backgroundQuestions);
+    const side = runtime.backgroundQuestions!;
+    yield* start();
+    yield* emit({ type: "agent_start" });
+    const record = {
+      id: "side-topic",
+      leafId: null,
+      question: "Side question",
+      answer: "",
+      status: "running",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    replies.set("btw", { record });
+    replies.set("btw_cancel", { cancelled: true });
+    const admitted = yield* side.ask({ providerThread, kind: "btw", question: record.question });
+    assert.equal(admitted.id, record.id);
+    assert.isTrue(
+      Exit.isFailure(yield* side.ask({ providerThread, kind: "pulse" }).pipe(Effect.exit)),
+    );
+    const updates = yield* Queue.unbounded<unknown>();
+    const streamFailed = yield* Deferred.make<void>();
+    yield* side.subscribe({ providerThread }).pipe(
+      Stream.runForEach((snapshot) => Queue.offer(updates, snapshot)),
+      Effect.catch(() => Deferred.succeed(streamFailed, undefined)),
+      Effect.forkScoped,
+    );
+    yield* emit({ type: "btw_record", record });
+    yield* emit({ type: "btw_delta", recordId: record.id, delta: "Side answer" });
+    let snapshot = yield* Queue.take(updates);
+    while (!JSON.stringify(snapshot).includes("Side answer")) snapshot = yield* Queue.take(updates);
+    assert.equal(runtime.providerSession.status, "running");
+    const switched = yield* runtime
+      .resumeThread({
+        providerThread: {
+          ...providerThread,
+          nativeThreadRef: { ...providerThread.nativeThreadRef!, nativeId: "/other.jsonl" },
+        },
+      })
+      .pipe(Effect.exit);
+    assert.isTrue(Exit.isFailure(switched));
+    assert.isTrue((yield* side.cancel({ providerThread, recordId: record.id })).cancelled);
+    assert.isFalse(frames.some((frame) => frame.type === "abort"));
+    yield* emit({
+      type: "btw_record",
+      record: { ...record, answer: "Side answer", status: "cancelled" },
+    });
+    while (!JSON.stringify(yield* Queue.take(updates)).includes("cancelled")) {}
+    yield* emit({
+      type: "notice",
+      source: "btw-history",
+      level: "error",
+      message: "Side history write failed",
+    });
+    yield* Deferred.await(streamFailed);
+    assert.equal(runtime.providerSession.status, "running");
+    yield* emit({
+      type: "prompt_result",
+      id: "t3-prompt-1",
+      status: "completed",
+      sessionSettled: true,
+    });
+    const terminal = yield* take("turn.terminal");
+    assert.equal(terminal.type, "turn.terminal");
+    if (terminal.type === "turn.terminal") assert.equal(terminal.status, "completed");
+  }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.effect("cancels a side question still starting without blocking main completion", () =>
+  Effect.gen(function* () {
+    const test = yield* setup();
+    yield* test.start();
+    test.pauseBtw();
+    test.replies.set("btw", {
+      record: {
+        id: "starting-side",
+        question: "Starting question",
+        answer: "",
+        status: "running",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    test.replies.set("btw_cancel", { cancelled: true });
+    const ask = yield* test.runtime
+      .backgroundQuestions!.ask({
+        providerThread: test.providerThread,
+        kind: "btw",
+        question: "Starting question",
+      })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(test.btwStarted);
+    assert.isTrue(
+      (yield* test.runtime.backgroundQuestions!.cancel({ providerThread: test.providerThread }))
+        .cancelled,
+    );
+    yield* test.emit({
+      type: "prompt_result",
+      id: "t3-prompt-1",
+      status: "completed",
+      sessionSettled: true,
+    });
+    yield* test.take("turn.terminal");
+    assert.equal(test.runtime.providerSession.status, "ready");
+    yield* Deferred.succeed(test.btwRelease, undefined);
+    yield* Fiber.join(ask);
+    assert.isTrue(
+      test.frames.some(
+        (frame) => frame.type === "btw_cancel" && frame.recordId === "starting-side",
+      ),
+    );
+    assert.isFalse(test.frames.some((frame) => frame.type === "abort"));
+  }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.effect(
+  "pins side questions without changing main status and rejects unsafe session or model changes",
+  () =>
+    Effect.gen(function* () {
+      const { runtime, providerThread, replies, start, emit, take, frames } = yield* setup();
+      yield* start();
+      yield* emit({
+        type: "prompt_result",
+        id: "t3-prompt-1",
+        status: "completed",
+        sessionSettled: true,
+      });
+      yield* take("turn.terminal");
+      const record = {
+        id: "idle-side",
+        leafId: null,
+        question: "Read only",
+        answer: "",
+        status: "running",
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      replies.set("btw", { record });
+      yield* runtime.backgroundQuestions!.ask({
+        providerThread,
+        kind: "btw",
+        question: record.question,
+      });
+      assert.equal(runtime.providerSession.status, "ready");
+      assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+      assert.isFalse(yield* runtime.hasPendingBackgroundWorkForThread!(providerThread));
+      assert.isTrue(
+        Exit.isFailure(yield* runtime.resumeThread({ providerThread }).pipe(Effect.exit)),
+      );
+      assert.isTrue(Exit.isFailure(yield* start(2, providerThread, "high").pipe(Effect.exit)));
+      assert.isFalse(
+        frames.some(
+          (frame) =>
+            frame.type === "switch_session" ||
+            (frame.type === "set_thinking_level" && frame.level === "high"),
+        ),
+      );
+      yield* runtime.readThreadSnapshot({ providerThread });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.effect.each([true, false])(
+  "recovers native followups and validates pulse reports (valid=%s)",
+  (valid) =>
+    Effect.gen(function* () {
+      const { runtime, providerThread, replies, frames } = yield* setup();
+      const side = runtime.backgroundQuestions!;
+      const root = {
+        id: "persisted",
+        leafId: null,
+        question: "Old question",
+        answer: "Old answer",
+        status: "complete",
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const followup = {
+        question: "Follow up",
+        answer: "Recovered answer",
+        status: "complete",
+        createdAt: 3,
+        updatedAt: 4,
+      };
+      replies.set("get_btw_history", { records: [{ ...root, followUps: [followup] }] });
+      const history = yield* side.history({ providerThread });
+      assert.deepEqual(
+        history.records[0]?.turns.map((turn) => turn.answer),
+        ["Old answer", "Recovered answer"],
+      );
+      replies.set("btw", {
+        record: { ...root, followUps: [followup, { ...followup, answer: "", status: "running" }] },
+      });
+      yield* side.ask({ providerThread, kind: "btw", question: "Continue", recordId: root.id });
+      assert.deepEqual(frames.at(-1), { type: "btw", question: "Continue", recordId: root.id });
+      // A separate native session reopening starts from its persisted terminal record.
+      const reopened = yield* setup();
+      const pulseReply = { ...root, id: "pulse", status: "running" };
+      reopened.replies.set("btw", { record: pulseReply });
+      yield* reopened.runtime.backgroundQuestions!.ask({
+        providerThread: reopened.providerThread,
+        kind: "pulse",
+      });
+      const prompt = reopened.frames.findLast((frame) => frame.type === "btw")?.question;
+      assert.isString(prompt);
+      const report = {
+        phase: "Build",
+        progress: "About half",
+        momentum: "On track",
+        evidence: "One done, one gap",
+        risk: "Unverified",
+        next: "Test",
+        steer: "Review the failing check",
+      };
+      reopened.replies.set("get_btw_history", {
+        records: [
+          {
+            ...pulseReply,
+            question: prompt,
+            status: "complete",
+            answer: valid ? JSON.stringify(report) : '{"phase":7}',
+          },
+        ],
+      });
+      // Complete the live record before requesting a disk refresh.
+      yield* reopened.emit({
+        type: "btw_record",
+        record: {
+          ...pulseReply,
+          status: "complete",
+          question: prompt,
+          answer: valid ? JSON.stringify(report) : "{}",
+        },
+      });
+      const snapshots = yield* Queue.unbounded<BackgroundQuestionSnapshot>();
+      yield* reopened.runtime
+        .backgroundQuestions!.subscribe({ providerThread: reopened.providerThread })
+        .pipe(
+          Stream.runForEach((value) => Queue.offer(snapshots, value)),
+          Effect.forkScoped,
+        );
+      let snapshot = yield* Queue.take(snapshots);
+      while (snapshot.records[0]?.turns.at(-1)?.status !== "complete")
+        snapshot = yield* Queue.take(snapshots);
+      assert.equal(snapshot.records[0]?.kind, "pulse");
+      assert.deepEqual(snapshot.records[0]?.report, valid ? report : null);
+      if (!valid) assert.match(snapshot.records[0]!.reportError!, /invalid report/);
+      assert.isFalse(
+        reopened.frames.some((frame) => frame.type === "steer" || frame.type === "prompt"),
+      );
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+);
 
 describe("OMP adapter outcome and ownership", () => {
   it.effect.each([{ stopReason: "error" }, { stopReason: "aborted" }])(

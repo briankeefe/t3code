@@ -74,6 +74,7 @@ export function PullRequestActionsMenu({
   attachesToComposer,
   askAboutPullRequest,
   explainPullRequest,
+  executePrReview,
   canFixFindings,
   startFixFindings,
   handoffLabels,
@@ -126,6 +127,7 @@ export function PullRequestActionsMenu({
   attachesToComposer: boolean;
   askAboutPullRequest: () => void;
   explainPullRequest: () => void;
+  executePrReview: (sanity: boolean) => void;
   canFixFindings: boolean;
   startFixFindings: () => void;
   handoffLabels: { readonly fixFindings: string };
@@ -265,6 +267,16 @@ export function PullRequestActionsMenu({
               A walk through the diff and what to read closely.
             </span>
           </span>
+        </MenuItem>
+        <MenuItem disabled={handoff !== null} onClick={() => executePrReview(false)}>
+          <BookOpenIcon className="size-3.5" />
+          {handoff === "execute-review" ? "Preparing..." : "Execute PR review"}
+        </MenuItem>
+        <MenuItem disabled={handoff !== null} onClick={() => executePrReview(true)}>
+          <SparklesIcon className="size-3.5" />
+          {handoff === "execute-review-sanity"
+            ? "Preparing..."
+            : "Execute PR review + sanity check"}
         </MenuItem>
         <MenuItem disabled={handoff !== null || !canFixFindings} onClick={startFixFindings}>
           <HammerIcon className="size-3.5" />

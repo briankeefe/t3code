@@ -1,24 +1,27 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import { herdrOmpThreads, type HerdrOmpWorkingCopy } from "./HerdrOmpSessions.ts";
 
+const testServices = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);
 const providerInstanceId = ProviderInstanceId.make("omp-test");
 const createdAt = "2026-01-01T00:00:00.000Z";
 const encode = (records: ReadonlyArray<unknown>) =>
   records.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
 const version = (contents: string) =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* Digest.Digest;
     return Buffer.from(
-      yield* crypto.digest("SHA-256", new TextEncoder().encode(contents)),
+      yield* crypto.digest(Digest.sha256, new TextEncoder().encode(contents)),
     ).toString("hex");
   });
 const entry = (
@@ -154,11 +157,13 @@ describe("HerdrOmpSessions", () => {
         model: "test/model-two",
         createdAt,
         updatedAt: assistantTime,
+        omittedMessageCount: 0,
         messages: [
           { role: "user", text: "  Synthetic prompt\n", createdAt: userTime },
           { role: "assistant", text: " First\nsecond ", createdAt: assistantTime },
         ],
       });
+      expect(outcome!.worktree).toBeNull();
       expect(outcome!.thread.providerSessionId).toBe(outcome!.source.filePath);
       expect(outcome!.source).toMatchObject({
         provider: "omp",
@@ -182,7 +187,7 @@ describe("HerdrOmpSessions", () => {
       const after = yield* fs.stat(original);
       expect(after.ino).toEqual(before.ino);
       expect(after.mtime).toEqual(before.mtime);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("drops only an incomplete trailing record and retains every message beyond 200", () =>
@@ -207,7 +212,7 @@ describe("HerdrOmpSessions", () => {
       expect(outcome!.thread.messages.at(-1)!.text).toBe("Synthetic text 204");
       expect(yield* fs.readFileString(outcome!.source.filePath)).toBe(complete);
       expect(yield* fs.readFileString(original)).toBe(contents);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("never replaces an existing snapshot, including its independent continuation", () =>
@@ -240,7 +245,7 @@ describe("HerdrOmpSessions", () => {
       expect(yield* fs.readFileString(third!.source.filePath)).toBe(continued);
       expect(yield* fs.readFileString(original)).toBe(nativeAdvanced);
       expect(yield* fs.readDirectory(snapshotDirectory)).toHaveLength(1);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -359,7 +364,7 @@ describe("HerdrOmpSessions", () => {
           expect(yield* fixture.fs.readFileString(first!.source.filePath)).toBe(workingContents);
           expect(yield* fixture.fs.readFileString(fixture.original)).toBe(sourceContents);
         }
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -413,7 +418,7 @@ describe("HerdrOmpSessions", () => {
           (yield* fixture.collectWithWorkingCopies(workingCopies).pipe(Effect.flip))._tag,
         ).toBe("AgentSessionScanError");
         expect(yield* fixture.fs.readFileString(continuedPath)).toBe(continued);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("only rediscovers persisted originals from the expected workspace", () =>
@@ -441,7 +446,7 @@ describe("HerdrOmpSessions", () => {
         ],
       ]);
       expect(yield* fixture.collectWithWorkingCopies(workingCopies)).toHaveLength(0);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -493,7 +498,7 @@ describe("HerdrOmpSessions", () => {
         yield* fixture.fs.makeDirectory(fixture.original);
         expect((yield* fixture.collect.pipe(Effect.flip))._tag).toBe("AgentSessionScanError");
         expect(yield* fixture.fs.readFileString(first!.source.filePath)).toBe(native);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("uses native cleared and dangling-captured leaf replay semantics", () =>
@@ -516,7 +521,7 @@ describe("HerdrOmpSessions", () => {
         const [outcome] = yield* fixture.collect;
         expect(outcome!.thread.messages.map((value) => value.text)).toEqual(expected);
       }
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -559,7 +564,7 @@ describe("HerdrOmpSessions", () => {
           const [outcome] = yield* fixture.collect;
           expect(outcome!.thread.title).toBe(naming.expected);
         }
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -595,7 +600,7 @@ describe("HerdrOmpSessions", () => {
         expect(yield* collect).toHaveLength(1);
         yield* fixture.registry({ other: fixture.ref(original, otherWorkspace) });
         expect(yield* collect).toHaveLength(0);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect(
@@ -629,7 +634,7 @@ describe("HerdrOmpSessions", () => {
           expect(yield* fixture.fs.readFileString(fixture.original)).toBe(contents);
           expect(yield* fixture.fs.readDirectory(fixture.snapshotDirectory)).toHaveLength(0);
         }
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("rejects oversized native files explicitly before allocating their contents", () =>
@@ -639,7 +644,7 @@ describe("HerdrOmpSessions", () => {
       yield* file.truncate(256 * 1024 * 1024 + 1);
       yield* fixture.collect.pipe(Effect.flip);
       expect(yield* fixture.fs.readDirectory(fixture.snapshotDirectory)).toHaveLength(0);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 
   it.effect("rejects mismatched headers, unsafe paths, and missing native sources honestly", () =>
@@ -667,6 +672,6 @@ describe("HerdrOmpSessions", () => {
         yield* fixture.registry({ main: ref });
         expect((yield* fixture.collect.pipe(Effect.flip))._tag).toBe("AgentSessionScanError");
       }
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(testServices)),
   );
 });

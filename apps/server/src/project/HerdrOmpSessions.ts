@@ -1,12 +1,13 @@
 import * as NodeUtil from "node:util";
 
 import { AgentSessionScanError, type ProviderInstanceId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import type {
@@ -74,10 +75,14 @@ export const readHerdrOmpFile = (filePath: string) =>
 
 type RecordValue = Record<string, unknown>;
 
-class HerdrSessionError extends Error {}
+class HerdrSessionError extends Schema.TaggedError<
+  HerdrSessionError,
+  { readonly brand: unique symbol }
+>()("HerdrSessionError", { message: Schema.String }) {}
+const isHerdrSessionError = Schema.is(HerdrSessionError);
 
 function invalid(reason: string): never {
-  throw new HerdrSessionError(reason);
+  throw new HerdrSessionError({ message: reason });
 }
 
 function record(value: unknown): RecordValue {
@@ -305,13 +310,13 @@ export function herdrOmpThreads(input: {
 }): Stream.Stream<
   HerdrOmpRecentThread,
   AgentSessionScanError,
-  FileSystem.FileSystem | Path.Path | Crypto.Crypto
+  FileSystem.FileSystem | Path.Path | Digest.Digest
 > {
   return Stream.unwrap(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const absolute = (value: string) => {
         if (!path.isAbsolute(value) || value.includes("\0"))
           return invalid("Herdr OMP paths must be absolute");
@@ -363,7 +368,10 @@ export function herdrOmpThreads(input: {
                 mode: 0o700,
               });
               const snapshots = yield* fs.realPath(input.snapshotDirectory);
-              const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(original));
+              const digest = yield* crypto.digest(
+                Digest.sha256,
+                new TextEncoder().encode(original),
+              );
               const providerSessionId = path.join(
                 snapshots,
                 `${Buffer.from(digest).toString("hex")}.jsonl`,
@@ -439,7 +447,7 @@ export function herdrOmpThreads(input: {
                     ? "herdr_ahead"
                     : "t3_ahead";
               const version = Effect.fn(function* (contents: Uint8Array) {
-                return Buffer.from(yield* crypto.digest("SHA-256", contents)).toString("hex");
+                return Buffer.from(yield* crypto.digest(Digest.sha256, contents)).toString("hex");
               });
               const makeThread = (session: typeof sourceParsed): AgentSessionThread => ({
                 source: "omp",
@@ -455,12 +463,14 @@ export function herdrOmpThreads(input: {
                 createdAt: session.createdAt,
                 updatedAt: session.updatedAt,
                 messages: session.messages,
+                omittedMessageCount: 0,
               });
               const thread = makeThread(parsed);
               const stats = snapshot.stats;
               return {
                 _tag: "Importable",
                 thread: working?.title === undefined ? thread : { ...thread, title: working.title },
+                worktree: null,
                 source: {
                   provider: "omp",
                   providerInstanceId: input.providerInstanceId,
@@ -491,14 +501,14 @@ export function herdrOmpThreads(input: {
     }),
   ).pipe(
     Stream.catchDefect((cause) =>
-      cause instanceof HerdrSessionError ? Stream.fail(cause) : Stream.die(cause),
+      isHerdrSessionError(cause) ? Stream.fail(cause) : Stream.die(cause),
     ),
     Stream.mapError(
       (cause) =>
         new AgentSessionScanError({
           operation: "read-projects",
           cause: new Error(
-            cause instanceof HerdrSessionError
+            isHerdrSessionError(cause)
               ? cause.message
               : "Could not read Herdr OMP registry or session snapshot",
           ),

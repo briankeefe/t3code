@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
-  type ProviderInstanceEnvironment,
+  type ResolvedProviderInstanceEnvironment,
   ProviderReplayTranscript,
 } from "@t3tools/contracts";
 import { OmpAdapterV2Driver } from "@t3tools/provider-omp/server";
@@ -30,7 +30,7 @@ export function layer<E, R>(input: {
   readonly spawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner, E, R>;
   readonly binaryPath: string;
   readonly launchArgs: string;
-  readonly environment?: ProviderInstanceEnvironment;
+  readonly environment?: ResolvedProviderInstanceEnvironment;
 }) {
   return ProviderAdapterRegistry.layerFromAdaptersEffect(
     OmpAdapterV2Driver.create({

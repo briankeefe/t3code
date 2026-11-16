@@ -210,10 +210,13 @@ export const makeOmpRpcConnection = Effect.fn("OmpRpc.connect")(function* (
   const signal = Effect.fn("OmpRpc.signal")(function* (kind: NodeJS.Signals) {
     if (childExited || !(yield* child.isRunning.pipe(Effect.orElseSucceed(() => false))))
       return false;
-    return yield* Effect.try(() => {
-      if (platform !== "win32") signalProcessGroup(Number(child.pid), kind);
-      else process.kill(Number(child.pid), kind);
-      return true;
+    return yield* Effect.try({
+      try: () => {
+        if (platform !== "win32") signalProcessGroup(Number(child.pid), kind);
+        else process.kill(Number(child.pid), kind);
+        return true;
+      },
+      catch: (cause) => new OmpRpcError({ operation: "signal", cause }),
     }).pipe(Effect.orElseSucceed(() => false));
   });
   const terminate = Effect.gen(function* () {

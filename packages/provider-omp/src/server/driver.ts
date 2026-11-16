@@ -49,6 +49,8 @@ const textGeneration: ProviderTextGeneration = {
   generateBranchName: () => unsupportedGeneration("generateBranchName"),
   generateThreadTitle: () => unsupportedGeneration("generateThreadTitle"),
   generateReviewGuide: () => unsupportedGeneration("generateReviewGuide"),
+  generateTranscriptionPostProcessing: () =>
+    unsupportedGeneration("generateTranscriptionPostProcessing"),
 };
 
 export type OmpDriverEnv =

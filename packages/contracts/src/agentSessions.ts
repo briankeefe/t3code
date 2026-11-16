@@ -8,7 +8,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
-export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex", "omp"]);
+export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex", "pi", "omp"]);
 export type AgentSessionSource = typeof AgentSessionSource.Type;
 
 export const AgentSessionImportSource = Schema.Struct({

@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProviderReplayEntry,
   ProviderInstanceId,
-  type ProviderInstanceEnvironment,
+  type ResolvedProviderInstanceEnvironment,
   type ProviderReplayTranscript,
   type ProviderReplayEntry as ProviderReplayEntryType,
 } from "@t3tools/contracts";
@@ -123,7 +123,10 @@ function adapterRequestId(frame: unknown): string | undefined {
 /** Rebind adapter request ids without pinning counters; provider ids that responses must echo stay exact. */
 function withRequestId(expected: unknown, actual: unknown): unknown {
   const actualId = adapterRequestId(actual);
-  return isRecord(expected) && adapterRequestId(expected) !== undefined && actualId !== undefined
+  return isRecord(expected) &&
+    actualId !== undefined &&
+    (adapterRequestId(expected) !== undefined ||
+      (expected.type === "prompt" && expected.id === undefined))
     ? { ...expected, id: actualId }
     : expected;
 }
@@ -373,7 +376,7 @@ export function layer<E, R>(input: {
   readonly spawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner, E, R>;
   readonly binaryPath: string;
   readonly launchArgs: string;
-  readonly environment?: ProviderInstanceEnvironment;
+  readonly environment?: ResolvedProviderInstanceEnvironment;
 }) {
   return ProviderAdapterRegistry.layerFromAdaptersEffect(
     PiAdapterV2Driver.create({

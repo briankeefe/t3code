@@ -8,7 +8,8 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -33,7 +34,8 @@ export type HerdrSessionRefreshServices =
   | ProviderSessionRuntime.ProviderSessionRuntimeRepository
   | FileSystem.FileSystem
   | Path.Path
-  | Crypto.Crypto
+  | SecureRandom.SecureRandom
+  | Digest.Digest
   | SqlClient.SqlClient;
 
 export function herdrRefreshBlockedReason(projection: WorkState): string | null {
@@ -148,7 +150,8 @@ export const refreshHerdrSession = Effect.fn("refreshHerdrSession")(function* (i
       const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const digest = yield* Digest.Digest;
       const sql = yield* SqlClient.SqlClient;
       const projection = yield* projections.getThreadProjection(input.threadId);
       const blocked = herdrRefreshBlockedReason(projection);
@@ -164,8 +167,8 @@ export const refreshHerdrSession = Effect.fn("refreshHerdrSession")(function* (i
       );
       const working = complete((yield* readHerdrOmpFile(input.outcome.source.filePath)).bytes);
       const version = (bytes: Uint8Array) =>
-        crypto
-          .digest("SHA-256", bytes)
+        digest
+          .digest(Digest.sha256, bytes)
           .pipe(Effect.map((hash) => Buffer.from(hash).toString("hex")));
       if (
         input.confirmation.sourceVersion !== input.outcome.herdr.sourceVersion ||
@@ -178,7 +181,7 @@ export const refreshHerdrSession = Effect.fn("refreshHerdrSession")(function* (i
             "The conversation changed after confirmation. Import from Herdr again to review the latest version.",
         };
       }
-      const revision = yield* crypto.randomUUIDv4();
+      const revision = yield* crypto.uuidV4();
       const at = yield* DateTime.now;
       const directory = yield* fs.realPath(input.snapshotDirectory);
       const nativeFile = path.join(directory, `${revision}.jsonl`);

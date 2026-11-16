@@ -1,6 +1,7 @@
 import type { OrchestrationV2FollowUp } from "@t3tools/contracts";
 
 const STATUS = {
+  preparing: { label: "Setting up", color: "#e0af68", filled: true, manual: false },
   working: { label: "Working", color: "#e0af68", filled: true, manual: false },
   waiting: { label: "Monitoring", color: "#ffffff", filled: true, manual: false },
   approval: { label: "Needs approval", color: "#f7768e", filled: true, manual: false },

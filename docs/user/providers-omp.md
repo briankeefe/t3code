@@ -119,6 +119,13 @@ Copies isolate conversation history, not workspace files. Don't run both copies 
 same working tree at once. Files larger than 256 MiB fail explicitly rather than importing
 truncated history.
 
+## Upgrade this fork
+
+The upstream merge moves the fork's follow-up migration from 73 to 97. On startup,
+T3 Code recognizes the old `73 / ThreadFollowUp` record, applies upstream's migration-73
+indexes, and then runs the remaining migrations. Saved conversations and follow-up marks
+are preserved; don't delete or manually rename migration records.
+
 The integration was informed by [Pivot](https://github.com/13kparkin/Pivot)'s OMP work and uses
 T3 Code's current provider architecture. The adapted OMP protocol decoder's MIT notice is in
 [THIRD_PARTY_NOTICES](../../packages/provider-omp/THIRD_PARTY_NOTICES).

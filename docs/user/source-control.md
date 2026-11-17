@@ -20,6 +20,16 @@ commit links follow your **Open links in** setting; on web, when that opens a ne
 shows an **Open link** button. Command/Ctrl+Click always opens the link in your browser. Commit links follow the **Open pull requests in T3 Code**
 setting in **Settings → Diffs**.
 
+### Reopen review links
+
+On web and desktop, the chat header keeps the thread's linked pull request within reach.
+It follows your pull request opening preference; Command/Ctrl+Click opens it in your browser.
+
+When an assistant posts a local Brew checklist URL such as
+`http://localhost:3398/eng-123-test`, **Brew test** reopens the newest checklist from the
+conversation. Only HTTP links on `localhost`, `127.0.0.1`, or `[::1]` with a
+`/<task>-test` path qualify; user messages and tool output do not replace it.
+
 ## Connect an account
 
 Install Git and configure authentication on the machine running your T3 Code server. For a remote

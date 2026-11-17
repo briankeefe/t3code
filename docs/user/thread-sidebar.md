@@ -62,7 +62,7 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 Pin a thread from its menu to keep it above your active work.
 
-On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
+On web and desktop, unpinning, settling, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
 state, including its pinned position, and reopens an archived thread you were
 viewing. Discarding an unsent draft from the sidebar works the same way: Undo brings
@@ -105,7 +105,7 @@ or **Settled** to drag a parked thread back into either live section. Each drop 
 saves the order, so it survives a refresh and appears on your other connected devices.
 
 On web and desktop, the list also animates section changes made with thread actions such as
-**Pin**, **Settle**, and **Snooze**. These transitions respect your system's reduced-motion
+**Pin** and **Settle**. These transitions respect your system's reduced-motion
 preference. While dragging, rows follow the insertion gap without replaying a second transition
 after the drop.
 
@@ -139,16 +139,21 @@ turn. Solid pink-red means an answer, approval, guest request, or usage limit ne
 attention, or the agent failed. Solid green means an unread completion. Outlined
 green means idle or already read.
 
-Choose **Waiting on someone else** from a thread's menu when progress depends on
-someone outside the thread. Choose **Will circle back** when you want to return to
-it later. These turn the existing circle solid purple or cyan, respectively; they
-never add another circle. Choosing one replaces the other.
+Hover a thread or focus its actions and click **Circle back** (the counterclockwise
+arrow) to return to it later, or **Waiting for someone else** (the hourglass) when
+progress depends on someone outside the thread. The same marks are available from
+the thread menu as **Will circle back** and **Waiting on someone else**. They turn
+the existing circle cyan or purple, respectively, without adding another circle.
+Choosing one replaces the other.
 
-Both marks are saved across reloads and connected devices. Reading, visiting,
-archiving, and agent activity do not dismiss them. A pink-red attention status
-temporarily takes priority; your mark returns when that attention is resolved.
-Choose **Clear waiting on someone else** or **Dismiss Will circle back** to remove
-the selected mark and restore the current agent status.
+Both marks are saved across reloads and connected devices. They have no timer and
+don't hide the thread or pause its agent. Click the selected icon again to clear
+it. Reading, visiting, archiving, and agent activity do not dismiss them. A pink-red
+attention status temporarily takes priority; your mark returns when it is resolved.
+
+These controls replace manual **Snooze** on web and desktop. Existing snoozed
+threads keep their scheduled wake time and **Wake thread** action. Automatic
+snoozing for usage-limit recovery and mobile snooze controls are unchanged.
 
 ### Fold working threads (beta)
 
@@ -219,7 +224,7 @@ finished background work or a pull request watch starts on its own does not.
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick
 **Follow settings** to return to the rules in **Settings → Threads**. While those rules are off,
-a thread on **Follow settings** does not settle automatically either. Manual settle, snooze, and
+a thread on **Follow settings** does not settle automatically either. Manual settle and
 archive still work while it is set to **Never**.
 
 Change these rules in **Settings → Threads**.
@@ -287,7 +292,7 @@ Snooze and auto-resume are independent: snooze alone wakes the thread without
 sending a message; enabling both wakes and continues it. **Wake now** cancels
 the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
-retry and the normal snooze choices.
+retry.
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
 On mobile, open a subagent from its conversation card or **Agents**. On iOS
@@ -342,20 +347,11 @@ side chats.
 On mobile, a thread lists its side chats above the composer. Tap one to open it and
 answer its questions.
 
-## Snooze until later
+## Existing snoozed threads
 
-To change the choices in the snooze menu, open **Settings → Threads → Snooze options**.
-Each option is a duration, such as 3 hours, or a time on a day, such as 9:00 PM
-tomorrow. A weekday means the next one after today. Menus list the options soonest
-first and hide a today option after its time passes. Saved with **All environments**
-selected, the options apply to every connected environment, and the mobile app uses them too.
-
-Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
-local time zone, or a duration in minutes, hours, or days. Durations start when
-you confirm; one day means 24 hours. On web and desktop, you can also snooze
-several selected threads together. Choose **Wake thread** to bring a thread back early.
-
-A snoozed thread keeps working and stays hidden until its wake time, even while
-its agent wakes itself for background work. It comes back early for an approval,
-a new question, a failed run, or a message or answer you send. You can snooze an existing
-question and answer when the thread wakes; the question stays unanswered.
+Previously snoozed threads still wake at their saved time. Choose **Wake thread**
+to bring one back early. A snoozed thread keeps working and stays hidden until its
+wake time, even while its agent wakes itself for background work. It comes back
+early when it needs an approval or answer, when a run fails, or when you send it a
+message. On mobile, **Snooze → Custom…** remains available for date, time, or duration
+reminders.

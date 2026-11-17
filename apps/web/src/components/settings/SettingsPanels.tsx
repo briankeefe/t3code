@@ -63,7 +63,6 @@ import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeConte
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
-import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
@@ -1839,12 +1838,6 @@ export function ThreadsSettingsPanel() {
       </SettingsSection>
 
       <ProjectDefaultsSettings category="general" />
-
-      {!isProjectScope ? (
-        <SettingsSection id="snooze" title="Snooze">
-          <SnoozePresetsRow />
-        </SettingsSection>
-      ) : null}
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow

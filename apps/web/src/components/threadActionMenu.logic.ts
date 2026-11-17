@@ -1,5 +1,4 @@
 import type { ContextMenuItem, OrchestrationV2FollowUp } from "@t3tools/contracts";
-import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 export type ThreadActionMenuId =
   | "find"
@@ -14,8 +13,6 @@ export type ThreadActionMenuId =
   | "auto-settle"
   | "auto-settle:enabled"
   | "auto-settle:disabled"
-  | "snooze"
-  | `snooze:${string}`
   | "unsnooze"
   | "toggle-waiting-on-others"
   | "toggle-circle-back"
@@ -82,7 +79,6 @@ export interface ThreadActionMenuState {
   readonly autoSettleEnabled: boolean;
   readonly isSnoozed: boolean;
   readonly followUp?: OrchestrationV2FollowUp | null;
-  readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
@@ -93,7 +89,6 @@ export interface ThreadActionMenuState {
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
   };
-  readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
@@ -146,29 +141,8 @@ export function buildThreadActionMenuItems(
             : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
         ]
       : []),
-    ...(state.supports.snooze
-      ? [
-          state.isSnoozed
-            ? { id: "unsnooze" as const, label: "Wake thread", icon: "clock" }
-            : {
-                id: "snooze" as const,
-                label: "Snooze",
-                icon: "clock",
-                disabled: !state.canSnoozeNow,
-                children: [
-                  ...state.snoozePresets.map((preset) => ({
-                    id: `snooze:${preset.id}` as const,
-                    label: preset.label,
-                    detail: preset.whenLabel,
-                  })),
-                  {
-                    id: "snooze:custom" as const,
-                    label: "Custom…",
-                    separatorBefore: state.snoozePresets.length > 0,
-                  },
-                ],
-              },
-        ]
+    ...(state.supports.snooze && state.isSnoozed
+      ? [{ id: "unsnooze" as const, label: "Wake thread", icon: "clock" }]
       : []),
     {
       id: "toggle-waiting-on-others",
@@ -177,11 +151,13 @@ export function buildThreadActionMenuItems(
           ? "Clear waiting on someone else"
           : "Waiting on someone else",
       checked: state.followUp === "waiting-on-others",
+      icon: "hourglass",
     },
     {
       id: "toggle-circle-back",
       label: state.followUp === "circle-back" ? "Dismiss Will circle back" : "Will circle back",
       checked: state.followUp === "circle-back",
+      icon: "rotate-ccw",
     },
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration

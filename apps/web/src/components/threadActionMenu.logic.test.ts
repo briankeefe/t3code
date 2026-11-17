@@ -10,7 +10,6 @@ const baseState: ThreadActionMenuState = {
   isSettled: false,
   autoSettleEnabled: true,
   isSnoozed: false,
-  canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
   supports: {
@@ -20,9 +19,6 @@ const baseState: ThreadActionMenuState = {
     pinning: true,
     titleRegeneration: true,
   },
-  snoozePresets: [
-    { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
-  ],
 };
 
 describe("buildThreadActionMenuItems", () => {
@@ -52,7 +48,6 @@ describe("buildThreadActionMenuItems", () => {
         : [
             "pin",
             "settle",
-            "snooze",
             "toggle-waiting-on-others",
             "toggle-circle-back",
             "rename",
@@ -62,10 +57,10 @@ describe("buildThreadActionMenuItems", () => {
             "delete",
           ];
       expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(expected);
-      expect(
-        items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
-          true,
-      ).toBe(true);
+      expect(items.some((item) => item.label === "Snooze")).toBe(false);
+      expect(items.find((item) => item.id === "unsnooze")?.label).toBe(
+        reversed ? "Wake thread" : undefined,
+      );
     },
   );
 
@@ -79,10 +74,12 @@ describe("buildThreadActionMenuItems", () => {
             ? "Clear waiting on someone else"
             : "Waiting on someone else",
         checked: followUp === "waiting-on-others",
+        icon: "hourglass",
       });
       expect(items.find((item) => item.id === "toggle-circle-back")).toMatchObject({
         label: followUp === "circle-back" ? "Dismiss Will circle back" : "Will circle back",
         checked: followUp === "circle-back",
+        icon: "rotate-ccw",
       });
       expect(
         buildThreadActionMenuItems({ ...baseState, followUp, canOperate: false })

@@ -1,6 +1,10 @@
 import { contextMenuSourceOf } from "../contextMenuSource";
 import { attachSidebarTree } from "../lib/sidebarTree";
-import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type OrchestrationV2FollowUp,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { toggleThreadFollowUp } from "@t3tools/client-runtime/state/thread-status-presentation";
 import {
@@ -9,7 +13,6 @@ import {
   moveThreadContextDrag as moveThreadContextDragGhost,
 } from "./chat/threadContextDrag";
 import { discardComposerDraft } from "../lib/discardComposerDraft";
-import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -26,11 +29,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext } from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import {
-  canSnooze,
-  effectiveSnoozed,
-  threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import {
   asLaunchingThread,
   createInboxReturnTracker,
@@ -224,12 +223,7 @@ import {
 import { SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import { createSidebarShiftGuard } from "./Sidebar.shiftGuard";
-import {
-  pickSnoozePreset,
-  resolveSnoozePresets,
-  snoozeWakeLabel,
-  type SnoozePreset,
-} from "./Sidebar.snooze";
+import { snoozeWakeLabel } from "@t3tools/client-runtime/state/thread-settled";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -928,7 +922,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     settleThread,
     unsettleThread,
-    snoozeThread,
     unsnoozeThread,
     pinThread,
     unpinThread,
@@ -1058,7 +1051,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     action: SidebarSweepAction;
     keys: ReadonlySet<string>;
   } | null>(null);
-  const snoozingThreadKeysRef = useRef(new Set<string>());
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
   const openAddProjectCommandPalette = () => openCommandPalette({ open: "add-project" });
   const routeThreadRef = resolveActiveThreadRouteRef(
@@ -2250,59 +2242,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
     })();
   };
-  const performSnooze = async (
+  const setFollowUp = async (
     threadRef: ScopedThreadRef,
-    preset: Pick<SnoozePreset, "snoozedUntil">,
-    opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
+    followUp: OrchestrationV2FollowUp | null,
   ) => {
-    const threadKey = scopedThreadKey(threadRef);
-    if (snoozingThreadKeysRef.current.has(threadKey)) {
-      return { status: "skipped" } as const;
+    const thread = readThreadShell(threadRef);
+    if (!thread || !checkThreadOperations([thread])) return;
+    const result = await updateThreadMetadata({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, followUp },
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to update follow-up marker",
+          description: String(squashAtomCommandFailure(result)),
+        }),
+      );
     }
-    snoozingThreadKeysRef.current.add(threadKey);
-    const navigateAfterSnooze = planForwardNavigation(threadKey, opts.coSnoozingKeys);
-    const result = await snoozeThread(threadRef, preset.snoozedUntil);
-    snoozingThreadKeysRef.current.delete(threadKey);
-    if (result._tag === "Failure") {
-      return isAtomCommandInterrupted(result)
-        ? ({ status: "interrupted" } as const)
-        : ({ status: "failure", error: squashAtomCommandFailure(result) } as const);
-    }
-    if (
-      shouldNavigateAfterThreadPark({
-        threadKey,
-        currentThreadKey: readRouteThreadKey(router),
-        action: "snooze",
-        now: new Date().toISOString(),
-        thread: readThreadShell(threadRef),
-      })
-    ) {
-      navigateAfterSnooze?.();
-    }
-    return { status: "success" } as const;
   };
-  const attemptSnooze = useStableCallback(
-    (
-      threadRef: ScopedThreadRef,
-      preset: Pick<SnoozePreset, "snoozedUntil">,
-      opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
-    ) => {
-      void (async () => {
-        const outcome = await performSnooze(threadRef, preset, opts);
-        if (outcome.status === "failure") {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to snooze thread",
-              description:
-                outcome.error instanceof Error ? outcome.error.message : "An error occurred.",
-            }),
-          );
-          return;
-        }
-      })();
-    },
-  );
+  const attemptToggleFollowUp = (threadRef: ScopedThreadRef, selected: OrchestrationV2FollowUp) => {
+    const thread = readThreadShell(threadRef);
+    if (thread) void setFollowUp(threadRef, toggleThreadFollowUp(thread.followUp, selected));
+  };
 
   const handleMultiSelectContextMenu = useStableCallback(
     async (position: { x: number; y: number }, source: ContextMenuSource) => {
@@ -2314,18 +2277,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       );
       if (threadKeys.length === 0) return;
       const count = threadKeys.length;
-      const selectionNow = new Date();
       const selectedThreads = threadKeys.flatMap((threadKey) => {
         const thread = threadByKeyRef.current.get(threadKey);
         return thread ? [thread] : [];
       });
       const settlingThreads = selectedThreads.filter(
         (thread) => thread.settledOverride !== "settled",
-      );
-      const canSnoozeSelection = selectedThreads.every(
-        (thread) =>
-          serverConfigs.has(thread.environmentId) &&
-          canSnooze(thread, { now: selectionNow.toISOString() }),
       );
       const titleRegenerationThreads = selectedThreads.filter((thread) =>
         serverConfigs.has(thread.environmentId),
@@ -2343,13 +2300,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const unpinMenuItem = buildBulkUnpinContextMenuItem({
         pinnedCount: pinnedSelectedThreads.length,
       });
-      // Presets sync across environments, so the first selected thread's stand for all.
-      const menuOpenedAt = new Date();
-      const snoozePresets = resolveSnoozePresets(
-        menuOpenedAt,
-        timestampFormat,
-        selectedThreads[0]!.environmentId,
-      );
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
@@ -2361,29 +2311,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               label: `Settle (${count})`,
               disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads),
             },
-            ...(canSnoozeSelection
-              ? [
-                  {
-                    id: "snooze",
-                    label: `Snooze (${count})`,
-                    disabled: !canOperateThreads(selectedThreads),
-                    children: [
-                      ...snoozePresets.map((preset) => ({
-                        id: `snooze:${preset.id}`,
-                        label: preset.label,
-                        detail: preset.whenLabel,
-                        disabled: !canOperateThreads(selectedThreads),
-                      })),
-                      {
-                        id: "snooze:custom",
-                        label: "Custom…",
-                        separatorBefore: snoozePresets.length > 0,
-                        disabled: !canOperateThreads(selectedThreads),
-                      },
-                    ],
-                  },
-                ]
-              : []),
+            {
+              id: "toggle-circle-back",
+              label: `Circle back (${count})`,
+              icon: "rotate-ccw",
+              checked: selectedThreads.every((thread) => thread.followUp === "circle-back"),
+              disabled: !canOperateThreads(selectedThreads),
+            },
+            {
+              id: "toggle-waiting-on-others",
+              label: `Waiting for someone else (${count})`,
+              icon: "hourglass",
+              checked: selectedThreads.every((thread) => thread.followUp === "waiting-on-others"),
+              disabled: !canOperateThreads(selectedThreads),
+            },
             ...(titleRegenerationMenuItem
               ? [
                   {
@@ -2422,48 +2363,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               : selectedThreads;
       if (clicked.value === "settle" && actionTargets.length === 0) return;
       if (clicked.value !== "mark-unread" && !checkThreadOperations(actionTargets)) return;
-      if (clicked.value?.startsWith("snooze:")) {
-        const preset =
-          clicked.value === "snooze:custom"
-            ? await requestCustomSnooze()
-            : pickSnoozePreset(
-                snoozePresets,
-                clicked.value.slice("snooze:".length),
-                timestampFormat,
-                selectedThreads[0]!.environmentId,
-              );
-        if (preset) {
-          const coSnoozingKeys = new Set(threadKeys);
-          clearSelection();
-          const outcomes = await Promise.all(
-            selectedThreads.map(async (thread) => {
-              const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-              const outcome = await performSnooze(threadRef, preset, { coSnoozingKeys });
-              return { outcome, threadRef };
-            }),
-          );
-          const snoozedThreadRefs = outcomes.flatMap(({ outcome, threadRef }) =>
-            outcome.status === "success" ? [threadRef] : [],
-          );
-          const failures = outcomes.flatMap(({ outcome }) =>
-            outcome.status === "failure" ? [outcome.error] : [],
-          );
-
-          if (failures.length > 0) {
-            const firstError = failures[0];
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title:
-                  snoozedThreadRefs.length > 0
-                    ? `Failed to snooze ${failures.length} thread${failures.length === 1 ? "" : "s"}`
-                    : "Failed to snooze threads",
-                description:
-                  firstError instanceof Error ? firstError.message : "An error occurred.",
-              }),
-            );
-          }
-        }
+      if (clicked.value === "toggle-circle-back" || clicked.value === "toggle-waiting-on-others") {
+        const selected =
+          clicked.value === "toggle-circle-back" ? "circle-back" : "waiting-on-others";
+        const next = selectedThreads.every((thread) => thread.followUp === selected)
+          ? null
+          : selected;
+        await Promise.all(
+          selectedThreads.map((thread) =>
+            setFollowUp(scopeThreadRef(thread.environmentId, thread.id), next),
+          ),
+        );
+        clearSelection();
         return;
       }
       if (clicked.value === "unpin") {
@@ -2633,11 +2544,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
         const isPinned = thread.pinnedAt != null;
-        const snoozePresets = resolveSnoozePresets(
-          new Date(),
-          timestampFormat,
-          thread.environmentId,
-        );
         const threadProjectGroup =
           projectGroupsRef.current.find((project) =>
             project.memberProjectRefs.some(
@@ -2667,7 +2573,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               followUp: thread.followUp ?? null,
-              canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               canShareWithGuest: appAtomRegistry.get(
@@ -2681,7 +2586,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 pinning: configLoaded,
                 titleRegeneration: configLoaded,
               },
-              snoozePresets,
             }),
             position,
             source,
@@ -2689,19 +2593,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
-        if (clicked.value?.startsWith("snooze:")) {
-          const preset =
-            clicked.value === "snooze:custom"
-              ? await requestCustomSnooze()
-              : pickSnoozePreset(
-                  snoozePresets,
-                  clicked.value.slice("snooze:".length),
-                  timestampFormat,
-                  thread.environmentId,
-                );
-          if (preset) attemptSnooze(threadRef, preset);
-          return;
-        }
         switch (clicked.value) {
           case "filter-by-project":
             if (threadProjectGroup) {
@@ -2794,30 +2685,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           }
           case "toggle-waiting-on-others":
-          case "toggle-circle-back": {
-            const result = await updateThreadMetadata({
-              environmentId: threadRef.environmentId,
-              input: {
-                threadId: threadRef.threadId,
-                followUp: toggleThreadFollowUp(
-                  thread.followUp,
-                  clicked.value === "toggle-waiting-on-others"
-                    ? "waiting-on-others"
-                    : "circle-back",
-                ),
-              },
-            });
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Failed to update follow-up marker",
-                  description: String(squashAtomCommandFailure(result)),
-                }),
-              );
-            }
+          case "toggle-circle-back":
+            attemptToggleFollowUp(
+              threadRef,
+              clicked.value === "toggle-waiting-on-others" ? "waiting-on-others" : "circle-back",
+            );
             return;
-          }
           case "rename":
             startThreadRename(threadRef, thread.title);
             return;
@@ -3516,7 +3389,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             onSettle={attemptSettle}
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
-                            onSnooze={attemptSnooze}
+                            onToggleFollowUp={attemptToggleFollowUp}
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
                             onAcknowledgeWoke={acknowledgeWoke}

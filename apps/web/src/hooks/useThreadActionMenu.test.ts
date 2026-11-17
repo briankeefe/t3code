@@ -34,7 +34,6 @@ function recordEffect(action: string) {
   state.completed.resolve();
 }
 
-vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
@@ -98,12 +97,6 @@ vi.mock("../components/ui/toast", () => ({
   stackedThreadToast: (toast: unknown) => toast,
   toastManager: { add: () => state.completed.resolve() },
 }));
-vi.mock("../components/Sidebar.snooze", () => ({
-  resolveSnoozePresets: () => [
-    { id: "hour", label: "In 1 hour", whenLabel: "3 PM", snoozedUntil: "2099-01-01T00:00:00Z" },
-  ],
-  snoozeWakeDescription: () => "later",
-}));
 vi.mock("./useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: () => recordEffect("copy") }),
 }));
@@ -126,7 +119,6 @@ vi.mock("./useThreadActions", () => ({
         "markThreadUnread",
         "settleThread",
         "unsettleThread",
-        "snoozeThread",
         "unsnoozeThread",
         "pinThread",
         "confirmAndUnpinThread",
@@ -166,7 +158,17 @@ beforeEach(() => {
 });
 
 describe("thread menu permissions", () => {
-  it.each(["rename", "regenerate-title", "delete", "pin", "settle", "archive"] as const)(
+  it.each([
+    "rename",
+    "regenerate-title",
+    "delete",
+    "pin",
+    "settle",
+    "unsnooze",
+    "toggle-waiting-on-others",
+    "toggle-circle-back",
+    "archive",
+  ] as const)(
     "%s rechecks after the native menu closes",
     async (action) => {
       state.granted.add("secondary");

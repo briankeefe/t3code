@@ -109,6 +109,22 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" } },
     { tag: "path", attrs: { d: "M8 16H3v5" } },
   ],
+  "rotate-ccw": [
+    { tag: "path", attrs: { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" } },
+    { tag: "path", attrs: { d: "M3 3v5h5" } },
+  ],
+  hourglass: [
+    { tag: "path", attrs: { d: "M5 22h14" } },
+    { tag: "path", attrs: { d: "M5 2h14" } },
+    {
+      tag: "path",
+      attrs: { d: "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" },
+    },
+    {
+      tag: "path",
+      attrs: { d: "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" },
+    },
+  ],
   settings: [
     {
       tag: "path",

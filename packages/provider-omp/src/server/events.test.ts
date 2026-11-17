@@ -74,6 +74,7 @@ describe("OMP native turn event translation", () => {
             messageId: "m1",
             message: {
               role: "assistant",
+              stopReason: "toolUse",
               content: [
                 { type: "thinking", thinking: "Consider carefully" },
                 { type: "text", text: "Hello world" },
@@ -106,6 +107,16 @@ describe("OMP native turn event translation", () => {
             isError: true,
             result: { content: [{ type: "text", text: "not found" }] },
           });
+          // OMP re-prompts after a stopped answer (todo reminders), so a turn can hold several answers.
+          yield* emitter.handle({
+            type: "message_end",
+            messageId: "m2",
+            message: {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "Done" }],
+            },
+          });
           yield* emitter.finish("completed");
           const items = events.flatMap((event) =>
             event.type === "turn_item.updated" ? [event.turnItem] : [],
@@ -119,7 +130,18 @@ describe("OMP native turn event translation", () => {
           assert.isTrue(
             items.some(
               (item) =>
-                item.type === "assistant_message" && item.text === "Hello world" && !item.streaming,
+                item.type === "assistant_message" &&
+                item.text === "Hello world" &&
+                !item.streaming &&
+                item.phase === undefined,
+            ),
+          );
+          assert.isTrue(
+            items.some(
+              (item) =>
+                item.type === "assistant_message" &&
+                item.text === "Done" &&
+                item.phase === "final_answer",
             ),
           );
           assert.isTrue(

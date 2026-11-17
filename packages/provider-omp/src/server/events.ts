@@ -53,6 +53,7 @@ interface StreamItem {
   readonly startedAt: DateTime.Utc;
   text: string;
   completed: boolean;
+  finalAnswer?: boolean;
   scheduled: boolean;
 }
 
@@ -153,7 +154,12 @@ export function makeOmpTurnEvents(options: {
     yield* emit({
       type: "turn_item.updated",
       driver: OMP_PROVIDER,
-      turnItem: { ...common, type: "assistant_message", messageId },
+      turnItem: {
+        ...common,
+        type: "assistant_message",
+        messageId,
+        ...(item.finalAnswer ? { phase: "final_answer" as const } : {}),
+      },
     });
     yield* emit({
       type: "message.updated",
@@ -454,6 +460,8 @@ export function makeOmpTurnEvents(options: {
           yield* schedule(item);
         }
       } else {
+        // OMP can re-prompt after a stopped reply (todo reminders), so only stopReason marks answers.
+        const finalAnswer = string(frame.message, "stopReason") === "stop";
         const content = field(frame.message, "content");
         if (Array.isArray(content))
           for (let index = 0; index < content.length; index++) {
@@ -466,6 +474,7 @@ export function makeOmpTurnEvents(options: {
               index,
             );
             item.text = string(block, kind === "text" ? "text" : "thinking") ?? item.text;
+            item.finalAnswer = kind === "text" && finalAnswer;
             yield* complete(item);
           }
       }

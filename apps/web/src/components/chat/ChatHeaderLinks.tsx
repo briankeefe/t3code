@@ -11,23 +11,23 @@ import { newestBrewTestUrl } from "./ChatHeaderLinks.logic";
 
 export function ChatHeaderLinks({
   threadRef,
-  linkedPullRequest,
+  pullRequests,
 }: {
   threadRef: ScopedThreadRef;
-  linkedPullRequest: ThreadLinkedPullRequest | null;
+  pullRequests: ReadonlyArray<Pick<ThreadLinkedPullRequest, "number" | "url">>;
 }) {
   const rows = useThreadVisibleTurnItems(threadRef);
   const brewTestUrl = newestBrewTestUrl(rows);
   const openPrLink = useOpenPrLink(threadRef);
   const openLink = useOpenLink(threadRef);
-  if (linkedPullRequest === null && brewTestUrl === null) return null;
+  if (pullRequests.length === 0 && brewTestUrl === null) return null;
   return (
     <div
-      className="flex shrink-0 items-center gap-1.5 [-webkit-app-region:no-drag]"
+      className="flex min-w-0 items-center gap-1.5 overflow-x-auto [-webkit-app-region:no-drag] [&>a]:shrink-0"
       onContextMenu={(event) => event.stopPropagation()}
     >
-      {linkedPullRequest ? (
-        <Tooltip>
+      {pullRequests.map((linkedPullRequest) => (
+        <Tooltip key={linkedPullRequest.url}>
           <TooltipTrigger
             render={
               <Badge
@@ -50,7 +50,7 @@ export function ChatHeaderLinks({
           </TooltipTrigger>
           <TooltipPopup>{linkedPullRequest.url}</TooltipPopup>
         </Tooltip>
-      ) : null}
+      ))}
       {brewTestUrl ? (
         <Tooltip>
           <TooltipTrigger

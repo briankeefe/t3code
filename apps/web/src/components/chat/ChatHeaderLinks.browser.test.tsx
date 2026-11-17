@@ -30,9 +30,7 @@ const linkedPullRequest = {
 
 it("shows linked PR and newest assistant checklist labels and hrefs, and removes absent links", async () => {
   state.rows = [];
-  await using screen = await render(
-    <ChatHeaderLinks threadRef={threadRef} linkedPullRequest={null} />,
-  );
+  await using screen = await render(<ChatHeaderLinks threadRef={threadRef} pullRequests={[]} />);
   await expect.element(screen.getByRole("link")).not.toBeInTheDocument();
 
   state.rows = [
@@ -43,16 +41,25 @@ it("shows linked PR and newest assistant checklist labels and hrefs, and removes
     { item: { type: "user_message", text: "http://localhost:3398/eng-200-test" } },
   ];
   await screen.rerender(
-    <ChatHeaderLinks threadRef={{ ...threadRef }} linkedPullRequest={linkedPullRequest} />,
+    <ChatHeaderLinks
+      threadRef={threadRef}
+      pullRequests={[
+        linkedPullRequest,
+        { number: 3876, url: "https://github.com/owner/repo/pull/3876" },
+      ]}
+    />,
   );
   const pr = screen.getByRole("link", { name: "Open pull request #123" });
   await expect.element(pr).toHaveTextContent("PR #123");
   await expect.element(pr).toHaveAttribute("href", linkedPullRequest.url);
+  await expect
+    .element(screen.getByRole("link", { name: "Open pull request #3876" }))
+    .toHaveAttribute("href", "https://github.com/owner/repo/pull/3876");
   const brew = screen.getByRole("link", { name: "Open Brew test checklist" });
   await expect.element(brew).toHaveTextContent("Brew test");
   await expect.element(brew).toHaveAttribute("href", "http://127.0.0.1:3398/eng-123-test");
 
   state.rows = [{ item: { type: "user_message", text: "http://localhost:3398/eng-200-test" } }];
-  await screen.rerender(<ChatHeaderLinks threadRef={{ ...threadRef }} linkedPullRequest={null} />);
+  await screen.rerender(<ChatHeaderLinks threadRef={threadRef} pullRequests={[]} />);
   await expect.element(screen.getByRole("link")).not.toBeInTheDocument();
 });

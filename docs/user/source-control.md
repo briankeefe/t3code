@@ -22,8 +22,8 @@ setting in **Settings → Diffs**.
 
 ### Reopen review links
 
-On web and desktop, the chat header keeps the thread's linked pull request within reach.
-It follows your pull request opening preference; Command/Ctrl+Click opens it in your browser.
+The chat header shows each pull request tracked by the thread. If none are tracked, it shows the resolved thread PR when available.
+Each link follows your pull request opening preference; Command/Ctrl+Click opens it in your browser.
 
 When an assistant posts a local Brew checklist URL such as
 `http://localhost:3398/eng-123-test`, **Brew test** reopens the newest checklist from the

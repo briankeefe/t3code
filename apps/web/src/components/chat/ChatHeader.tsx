@@ -51,7 +51,7 @@ interface ChatHeaderProps {
   activeThreadId: ThreadId;
   activeThreadTitle: string;
   activeThreadLinkOrigin?: string | null | undefined;
-  linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  pullRequests?: ReadonlyArray<Pick<ThreadLinkedPullRequest, "number" | "url">>;
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
@@ -77,7 +77,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   activeThreadTitle,
   activeThreadLinkOrigin,
-  linkedPullRequest = null,
+  pullRequests = [],
   isServerThread,
   activeProject,
   parentThreadLink,
@@ -403,7 +403,7 @@ export const ChatHeader = memo(function ChatHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       {isServerThread ? (
-        <ChatHeaderLinks threadRef={activeThreadRef} linkedPullRequest={linkedPullRequest} />
+        <ChatHeaderLinks threadRef={activeThreadRef} pullRequests={pullRequests} />
       ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>

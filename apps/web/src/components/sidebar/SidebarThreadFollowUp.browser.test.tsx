@@ -13,7 +13,7 @@ vi.mock("../../state/session", async (original) => ({
 }));
 
 it.each(["card", "slim", "folder", "folder-multiline"] as const)(
-  "replaces snooze with exclusive manual follow-up toggles in %s rows",
+  "keeps manual follow-up and background-wait status consistent in %s rows",
   async (variant) => {
     const thread = makeThreadFixture({ title: "Contract review: follow up with the team" });
     const onToggleFollowUp = vi.fn();
@@ -99,5 +99,41 @@ it.each(["card", "slim", "folder", "folder-multiline"] as const)(
     expect(onToggleFollowUp).toHaveBeenCalledTimes(3);
     await screen.rerender(<SortableThreadRow {...props} thread={{ ...thread, followUp: null }} />);
     await expect.element(waiting).toHaveAttribute("aria-pressed", "false");
+
+    const runtime = {
+      status: "idle" as const,
+      providerInstanceId: thread.providerInstanceId,
+      providerName: "Claude",
+      activeRunId: null,
+      activityStartedAt: null,
+      lastError: null,
+      updatedAt: thread.updatedAt,
+    };
+    await screen.rerender(
+      <SortableThreadRow
+        {...props}
+        thread={{
+          ...thread,
+          runtime,
+          pendingBackgroundTasks: [
+            { taskId: "ci-watch", kind: "monitor", description: "Watching CI", awaited: true },
+          ],
+        }}
+      />,
+    );
+    const circle = () =>
+      getComputedStyle(screen.container.querySelector('svg[aria-label^="Agent:"] circle')!);
+    expect(circle().fill).toBe("rgb(255, 255, 255)");
+    await expect.element(screen.getByRole("img", { name: "Agent: Monitoring" })).toBeVisible();
+    await screen.rerender(
+      <SortableThreadRow
+        {...props}
+        thread={{ ...thread, runtime: { ...runtime, status: "running" } }}
+      />,
+    );
+    expect(circle().fill).toBe("rgb(224, 175, 104)");
+    await screen.rerender(<SortableThreadRow {...props} thread={thread} />);
+    expect(circle().fill).toBe("none");
+    expect(circle().stroke).toBe("rgb(158, 206, 106)");
   },
 );

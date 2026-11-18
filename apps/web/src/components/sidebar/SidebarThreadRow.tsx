@@ -710,7 +710,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarRowStatus({ ...thread, lastVisitedAt });
-  const agentStatus = status === "waiting" && thread.runtime?.status === "idle" ? "ready" : status;
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =
@@ -980,7 +979,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: resolveThreadStatusPresentation(agentStatus, isUnread, thread.followUp).label,
+    statusLabel: resolveThreadStatusPresentation(status, isUnread, thread.followUp).label,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -1227,7 +1226,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {draftIndicator}
               <SidebarAgentStatus
-                status={agentStatus}
+                status={status}
                 unread={isUnread}
                 followUp={thread.followUp ?? null}
               />
@@ -1551,7 +1550,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
               <SidebarAgentStatus
-                status={agentStatus}
+                status={status}
                 unread={isUnread}
                 followUp={thread.followUp ?? null}
               />

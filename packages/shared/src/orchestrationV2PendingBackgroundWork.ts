@@ -70,9 +70,11 @@ export function deriveBlockedOnThreadWait(input: {
     ) {
       continue;
     }
+    if (item.type === "command_execution" && item.background) continue;
     if (item.type !== "dynamic_tool") return false;
     const tool = resolveT3McpToolId(item.toolName);
     if (
+      !(item.nativeItemRef?.driver === "omp" && item.toolName === "wait") &&
       tool !== "t3_thread_wait" &&
       !(
         tool === "delegate_task" &&

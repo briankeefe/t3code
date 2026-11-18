@@ -8,9 +8,11 @@ import {
   RunId,
   ThreadId,
   type OrchestrationV2ProviderTurn,
+  type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import type { ProviderAdapterV2Event } from "@t3tools/provider-core/server/ProviderAdapter";
+import { deriveBlockedOnThreadWait } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { makeOmpTurnEvents, OMP_PROVIDER, type OmpTurnEventInput } from "./events.ts";
@@ -172,6 +174,54 @@ describe("OMP native turn event translation", () => {
           );
         }),
       ).pipe(Effect.provide(IdAllocator.layer)),
+  );
+
+  it.effect("flags a native wait on detached CI, but not concurrent foreground work", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const items = new Map<string, OrchestrationV2TurnItem>();
+        const emitter = makeOmpTurnEvents({
+          input,
+          providerTurn,
+          ids: yield* IdAllocator.IdAllocatorV2,
+          scope: yield* Effect.scope,
+          emit: (event) =>
+            Effect.sync(() => {
+              if (event.type === "turn_item.updated") items.set(event.turnItem.id, event.turnItem);
+            }),
+        });
+        const isBlocked = () =>
+          deriveBlockedOnThreadWait({
+            activeRun: { id: input.runId, status: "running" },
+            turnItems: [...items.values()],
+          });
+        yield* emitter.handle({
+          type: "tool_execution_start",
+          toolCallId: "ci",
+          toolName: "bash",
+          args: { command: "gh run watch 123 --exit-status", async: true },
+        });
+        assert.isFalse(isBlocked(), "a detached CI job alone does not block the agent");
+        yield* emitter.handle({
+          type: "tool_execution_start",
+          toolCallId: "wait",
+          toolName: "wait",
+          args: { i: "Awaiting frontend retry outcome" },
+        });
+        assert.isTrue(isBlocked(), "only detached CI is running while the agent waits");
+        yield* emitter.handle({
+          type: "tool_execution_start",
+          toolCallId: "foreground",
+          toolName: "bash",
+          args: { command: "git status --short" },
+        });
+        assert.isFalse(isBlocked(), "foreground work takes priority");
+        yield* emitter.handle({ type: "tool_execution_end", toolCallId: "foreground" });
+        assert.isTrue(isBlocked());
+        yield* emitter.handle({ type: "tool_execution_end", toolCallId: "wait" });
+        assert.isFalse(isBlocked(), "the agent resumed even though the CI item is still active");
+      }),
+    ).pipe(Effect.provide(IdAllocator.layer)),
   );
 
   it.effect("keeps native subagent progress attached to its original run through completion", () =>

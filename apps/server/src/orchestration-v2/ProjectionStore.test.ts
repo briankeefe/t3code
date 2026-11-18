@@ -1632,6 +1632,22 @@ it.effect("SQL shells flag only an active turn blocked solely on T3 thread waits
     yield* updateItem({ ...wait, status: "completed", completedAt: at });
     yield* assertBlocked(false);
 
+    const nativeWait = { ...wait, toolName: "wait" };
+    yield* updateItem(nativeWait);
+    yield* assertBlocked(false);
+    const ompDriver = ProviderDriverKind.make("omp");
+    const ompWait = {
+      ...nativeWait,
+      nativeItemRef: { driver: ompDriver, nativeId: "native-wait", strength: "weak" as const },
+    };
+    const detached = { ...command, background: true as const };
+    yield* updateItem(detached);
+    yield* updateItem(ompWait);
+    yield* assertBlocked(true);
+    yield* updateItem({ ...ompWait, status: "completed", completedAt: at });
+    yield* assertBlocked(false);
+    yield* updateItem({ ...detached, status: "completed", completedAt: at });
+
     const delegation = {
       ...wait,
       id: TurnItemId.make("item:thread-wait:delegation"),

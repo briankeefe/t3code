@@ -128,6 +128,17 @@ it.each(["card", "slim", "folder", "folder-multiline"] as const)(
     await screen.rerender(
       <SortableThreadRow
         {...props}
+        thread={{
+          ...thread,
+          runtime: { ...runtime, status: "running" },
+          blockedOnThreadWait: true,
+        }}
+      />,
+    );
+    expect(circle().fill).toBe("rgb(255, 255, 255)");
+    await screen.rerender(
+      <SortableThreadRow
+        {...props}
         thread={{ ...thread, runtime: { ...runtime, status: "running" } }}
       />,
     );

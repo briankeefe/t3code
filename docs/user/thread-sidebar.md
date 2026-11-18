@@ -134,10 +134,10 @@ open.
 ### Agent status circles
 
 The circle beside each thread shows its current status: solid amber means working;
-solid white means waiting on background work or monitoring without an active agent
-turn. Solid pink-red means an answer, approval, guest request, or usage limit needs
-attention, or the agent failed. Solid green means an unread completion. Outlined
-green means idle or already read.
+solid white means waiting on background work, including when an OMP turn is blocked
+in `wait` and no foreground tool is running. Solid pink-red means an answer,
+approval, guest request, or usage limit needs attention, or the agent failed.
+Solid green means an unread completion. Outlined green means idle or already read.
 
 Hover a thread or focus its actions and click **Circle back** (the counterclockwise
 arrow) to return to it later, or **Waiting for someone else** (the hourglass) when

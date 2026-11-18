@@ -249,6 +249,7 @@ export function makeOmpTurnEvents(options: {
         type: "command_execution",
         title: state.name,
         input: string(state.args, "command") ?? "",
+        ...(field(state.args, "async") === true ? { background: true as const } : {}),
         output,
         ...(exitCode === undefined ? {} : { exitCode }),
       };

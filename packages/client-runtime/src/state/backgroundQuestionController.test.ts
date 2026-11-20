@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId, type BackgroundQuestionRecord } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { type AtomCommandResult } from "./runtime.ts";
+import * as Effect from "effect/Effect";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import {
   createBackgroundQuestionController,
   parseBackgroundQuestionCommand,
@@ -12,8 +11,8 @@ describe("background question controller", () => {
   it("keeps reserved commands out of normal text and rejects unsupported requests without asking", async () => {
     const registry = AtomRegistry.make();
     const allowed = Atom.make(true);
-    const ask = vi.fn(async () =>
-      AsyncResult.success<BackgroundQuestionRecord>({
+    const ask = vi.fn(() =>
+      Effect.succeed<BackgroundQuestionRecord>({
         id: "topic",
         kind: "btw",
         createdAt: 1,
@@ -27,7 +26,7 @@ describe("background question controller", () => {
       ask: { label: "ask", run: ask, permissionAtom: () => allowed },
       cancel: {
         label: "cancel",
-        run: async () => AsyncResult.success({ cancelled: true }),
+        run: () => Effect.succeed({ cancelled: true }),
         permissionAtom: () => allowed,
       },
     });
@@ -76,12 +75,9 @@ describe("background question controller", () => {
   it("isolates pending answers by thread and environment, retains selection on close, and surfaces cancellation errors", async () => {
     const registry = AtomRegistry.make();
     const allowed = Atom.make(true);
-    const answer = Promise.withResolvers<AtomCommandResult<BackgroundQuestionRecord, Error>>();
-    const ask = vi.fn(() => answer.promise);
-    const cancel = vi.fn(
-      async (): Promise<AtomCommandResult<{ readonly cancelled: boolean }, Error>> =>
-        AsyncResult.failure(Cause.fail(new Error("cancel failed"))),
-    );
+    const answer = Promise.withResolvers<BackgroundQuestionRecord>();
+    const ask = vi.fn(() => Effect.promise(() => answer.promise));
+    const cancel = vi.fn(() => Effect.fail("cancel failed"));
     const controller = createBackgroundQuestionController({
       ask: { label: "ask", run: ask, permissionAtom: () => allowed },
       cancel: { label: "cancel", run: cancel, permissionAtom: () => allowed },
@@ -102,17 +98,15 @@ describe("background question controller", () => {
       expect(registry.get(controller.state(target)).pending).toBe(true);
       expect(await controller.ask(registry, target, { kind: "pulse" })).toBe(false);
       controller.update(registry, target, { open: false });
-      answer.resolve(
-        AsyncResult.success({
-          id: "topic",
-          kind: "btw",
-          createdAt: 1,
-          updatedAt: 2,
-          turns: [],
-          report: null,
-          reportError: null,
-        }),
-      );
+      answer.resolve({
+        id: "topic",
+        kind: "btw",
+        createdAt: 1,
+        updatedAt: 2,
+        turns: [],
+        report: null,
+        reportError: null,
+      });
       expect(await request).toBe(true);
       expect(registry.get(controller.state(target))).toMatchObject({
         open: false,

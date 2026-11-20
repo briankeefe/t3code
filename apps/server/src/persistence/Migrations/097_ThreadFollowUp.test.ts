@@ -54,7 +54,7 @@ const thread = (fixture: (typeof fixtures)[number]) => ({
   ...fixture.marker,
 });
 
-it.effect.each(["upstream", "legacy-fork"] as const)(
+it.effect.each(["upstream", "legacy-fork", "installed-fork"] as const)(
   "migrates saved follow-ups once from %s and preserves them across restart and historical replay",
   (origin) =>
     Effect.gen(function* () {
@@ -105,14 +105,19 @@ it.effect.each(["upstream", "legacy-fork"] as const)(
         ) VALUES ('legacy-v1', 'thread', 'legacy-v1', 0, 'thread.created',
           ${at}, 'user', ${v1Payload}, '{}', 1)
       `;
-        if (origin === "legacy-fork") {
+        if (origin !== "upstream") {
           yield* ThreadFollowUp;
-          yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (73, 'ThreadFollowUp')`;
+          const id = origin === "legacy-fork" ? 73 : 97;
+          yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, 'ThreadFollowUp')`;
         }
         assert.deepEqual(
           yield* runMigrations(),
           migrationManifest.filter(([id]) => id >= (origin === "legacy-fork" ? 73 : 97)),
         );
+        const [bindings] = yield* sql<{ readonly name: string }>`
+          SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'issue_tracker_bindings'
+        `;
+        assert.equal(bindings?.name, "issue_tracker_bindings");
         const rows = yield* sql<{ readonly thread_id: string; readonly payload_json: string }>`
         SELECT thread_id, payload_json FROM orchestration_v2_projection_threads
       `;

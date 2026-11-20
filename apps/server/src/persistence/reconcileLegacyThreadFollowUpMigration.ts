@@ -9,10 +9,14 @@ type MigrationRow = { readonly id: number; readonly name: string };
 export function reconciledLegacyThreadFollowUpHistory(
   history: ReadonlyArray<MigrationRow>,
 ): ReadonlyArray<MigrationRow> | null {
-  const legacy = history.find((row) => row.id === 73 && row.name === "ThreadFollowUp");
+  const legacy = history.find(
+    (row) => (row.id === 73 || row.id === 97) && row.name === "ThreadFollowUp",
+  );
   if (legacy === undefined) return history;
-  if (history.some((row) => row.id > 73)) return null;
-  return history.map((row) => (row === legacy ? { id: 73, name: "ActiveTurnItemIndexes" } : row));
+  if (history.some((row) => row.id > legacy.id)) return null;
+  return legacy.id === 97
+    ? history.filter((row) => row !== legacy)
+    : history.map((row) => (row === legacy ? { id: 73, name: "ActiveTurnItemIndexes" } : row));
 }
 
 // Startup runs this and its history assertion in one transaction.
@@ -35,6 +39,13 @@ export const reconcileLegacyThreadFollowUpMigration = Effect.fn(
       kind: "BadState",
       message: "Cannot upgrade legacy ThreadFollowUp with unexpected later migrations.",
     });
+  }
+  if (history.some((row) => row.id === 97 && row.name === "ThreadFollowUp")) {
+    yield* sql`
+      DELETE FROM effect_sql_migrations
+      WHERE migration_id = 97 AND name = 'ThreadFollowUp'
+    `;
+    return [];
   }
   // Moving this row to 97 would make the migrator skip upstream schema 73–96.
   yield* ActiveTurnItemIndexes;

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/shared/databaseMigrationLog";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 import { reconcileLegacyThreadFollowUpMigration } from "./reconcileLegacyThreadFollowUpMigration.ts";
+import ThreadFollowUp from "./Migrations/097_ThreadFollowUp.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
 import Migration0002 from "./Migrations/002_OrchestrationCommandReceipts.ts";
@@ -105,7 +106,12 @@ import Migration0093 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
 import Migration0094 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
 import Migration0095 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
 import Migration0096 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
-import Migration0097 from "./Migrations/097_ThreadFollowUp.ts";
+import Migration0097 from "./Migrations/097_IssueTrackerBindings.ts";
+import Migration0098 from "./Migrations/098_ActiveShellIndexIndexes.ts";
+import Migration0099 from "./Migrations/099_BackgroundRecoveryIndexes.ts";
+import Migration0100 from "./Migrations/100_TurnStartReadIndexes.ts";
+import Migration0101 from "./Migrations/101_DelegatedTaskReadIndexes.ts";
+import Migration0102 from "./Migrations/102_ThreadItemCounts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -205,7 +211,12 @@ const migrationEntries = [
   [94, "TurnItemMessageOrdinalIndex", Migration0094],
   [95, "TurnItemInlineWorkOutput", Migration0095],
   [96, "RepairStaleTitleRegeneration", Migration0096],
-  [97, "ThreadFollowUp", Migration0097],
+  [97, "IssueTrackerBindings", Migration0097],
+  [98, "ActiveShellIndexIndexes", Migration0098],
+  [99, "BackgroundRecoveryIndexes", Migration0099],
+  [100, "TurnStartReadIndexes", Migration0100],
+  [101, "DelegatedTaskReadIndexes", Migration0101],
+  [102, "ThreadItemCounts", Migration0102],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -266,6 +277,19 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
 
 const latestMigrationId = Math.max(...migrationEntries.map(([id]) => id));
 
+const forkMigrationTable = "t3_fork_sql_migrations";
+const forkMigrationLoader = Migrator.fromRecord({ "1_ThreadFollowUp": ThreadFollowUp });
+
+const hasPendingForkMigrations = Effect.fn("hasPendingForkMigrations")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${forkMigrationTable}
+  `;
+  if (tables.length === 0) return true;
+  const rows = yield* sql`SELECT 1 FROM ${sql(forkMigrationTable)} WHERE migration_id = 1`;
+  return rows.length === 0;
+});
+
 // Mirrors the Migrator, which runs only ids above the highest recorded, plus the V2-preview reconciliation.
 export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -280,7 +304,11 @@ export const hasPendingMigrations = Effect.fn("hasPendingMigrations")(function* 
     FROM effect_sql_migrations
   `;
   const row = rows[0];
-  return (row?.latestId ?? 0) < latestMigrationId || (row?.previewRows ?? 0) > 0;
+  return (
+    (row?.latestId ?? 0) < latestMigrationId ||
+    (row?.previewRows ?? 0) > 0 ||
+    (yield* hasPendingForkMigrations())
+  );
 });
 
 const run = Migrator.make({});
@@ -346,7 +374,16 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     }
     executedMigrations.push(...(yield* run({ loader: makeMigrationLoader(id) })));
   }
-  const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
+  // Keep fork migrations out of upstream's numbered ledger.
+  const forkMigrations =
+    (toMigrationInclusive === undefined || toMigrationInclusive >= 97) &&
+    (yield* hasPendingForkMigrations())
+      ? yield* run({ table: forkMigrationTable, loader: forkMigrationLoader })
+      : [];
+  const migrations = [
+    ...executedMigrations.map(([id, name]) => `${id}_${name}`),
+    ...forkMigrations.map(([id, name]) => `fork:${id}_${name}`),
+  ];
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")
     : Effect.log(DATABASE_MIGRATIONS_FINISHED_MESSAGE).pipe(Effect.annotateLogs({ migrations }));

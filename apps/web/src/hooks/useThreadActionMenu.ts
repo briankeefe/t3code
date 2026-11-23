@@ -149,6 +149,7 @@ export function useThreadActionMenu(input: {
         isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
+        hasCompletedRun: thread.latestRun?.completedAt != null,
         supports,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),

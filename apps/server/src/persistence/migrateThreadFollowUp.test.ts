@@ -10,10 +10,10 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import * as EventStore from "../../orchestration-v2/EventStore.ts";
-import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
-import { migrationManifest, runMigrations } from "../Migrations.ts";
-import ThreadFollowUp from "./097_ThreadFollowUp.ts";
+import * as EventStore from "../orchestration-v2/EventStore.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { migrationManifest, runMigrations } from "./Migrations.ts";
+import ThreadFollowUp from "./migrateThreadFollowUp.ts";
 
 const at = "2026-11-04T00:00:00.000Z";
 const fixtures = [

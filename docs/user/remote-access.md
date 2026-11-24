@@ -3,6 +3,10 @@
 Connect a phone, browser, or another desktop app to T3 Code running on a different
 machine. That machine must stay running and reachable while you work.
 
+This fork disables T3 Connect on the host, including previously linked Connect
+sessions. Use [private Tailscale HTTPS](#tailscale-https), direct pairing, or SSH
+instead. The T3 Connect setup below applies to upstream builds.
+
 ## T3 Connect
 
 T3 Connect makes an environment available to your other devices without setting

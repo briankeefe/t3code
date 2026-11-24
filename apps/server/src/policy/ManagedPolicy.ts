@@ -36,6 +36,7 @@ export class ManagedPolicy extends Context.Service<
     /** Where the policy is read from, whether or not a file exists there. */
     readonly path: string;
     readonly document: ManagedPolicyDocument | undefined;
+    readonly connectDisabledByFork?: true;
     readonly settings: ManagedSettings.ManagedSettings;
     readonly providers: ManagedProviders.ManagedProviders;
     /** What clients are told; absent when no policy applies. */
@@ -204,7 +205,15 @@ const make = Effect.gen(function* () {
       lockedSettings: policy.summary.lockedSettings,
     });
   }
-  return policy;
+  // The fork keeps direct pairing but never trusts the managed Connect route.
+  return ManagedPolicy.of({
+    ...policy,
+    connectDisabledByFork: true,
+    summary:
+      policy.summary === undefined
+        ? undefined
+        : { ...policy.summary, limits: { ...policy.summary.limits, connect: false } },
+  });
 });
 
 // A single-executable server resolves packages on disk only through `require`.

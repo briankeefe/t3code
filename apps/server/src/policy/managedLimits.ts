@@ -26,7 +26,10 @@ import * as NetService from "@t3tools/shared/Net";
 
 import { loopbackBindAddress } from "../auth/utils.ts";
 
-type PolicyDocument = { readonly document: ManagedPolicyDocument | undefined };
+type PolicyDocument = {
+  readonly document: ManagedPolicyDocument | undefined;
+  readonly connectDisabledByFork?: true;
+};
 
 export class ManagedPolicyRefusedError extends Schema.TaggedError<ManagedPolicyRefusedError>()(
   "ManagedPolicyRefusedError",
@@ -74,7 +77,9 @@ export const allowsRemoteClients = (policy: PolicyDocument) =>
 
 /** T3 Connect is a way for remote clients in, so a policy without `remote` turns it off too. */
 export const allowsConnect = (policy: PolicyDocument) =>
-  policy.document?.limits?.connect !== false && allowsRemoteClients(policy);
+  !policy.connectDisabledByFork &&
+  policy.document?.limits?.connect !== false &&
+  allowsRemoteClients(policy);
 
 const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
   new ManagedPolicyRefusedError({
@@ -83,7 +88,10 @@ const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
     ...(detail === undefined ? {} : { detail }),
   });
 
-export const refuseConnect = (policy: PolicyDocument) => refuse(policy, "T3 Connect");
+export const refuseConnect = (policy: PolicyDocument) =>
+  policy.connectDisabledByFork
+    ? new ManagedPolicyRefusedError({ organization: "This fork", action: "T3 Connect" })
+    : refuse(policy, "T3 Connect");
 
 // Node throws ENOTDIR, outside the spawner's error mapping, when PATH ends in a file.
 const isMissingCli = (cause: unknown) =>

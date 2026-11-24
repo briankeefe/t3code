@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -12,6 +13,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
+import * as ManagedLimits from "./managedLimits.ts";
 import * as ManagedPolicy from "./ManagedPolicy.ts";
 import { disallowedDriverReason, providerHostEnvironment } from "./managedProviders.ts";
 import * as ManagedSettings from "./managedSettings.ts";
@@ -32,6 +34,33 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
       const policy = yield* loadFrom(undefined);
       assert.isUndefined(policy.summary);
     }),
+  );
+
+  it.effect("keeps direct remote pairing but denies T3 Connect in the fork runtime", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-fork-policy-" });
+      const policyPath = path.join(dir, "policy.json");
+      for (const document of [
+        undefined,
+        { schemaVersion: 1, organization: "Example Corp", limits: { connect: true } },
+      ]) {
+        if (document !== undefined) {
+          yield* fs.writeFileString(policyPath, JSON.stringify(document));
+        }
+        const policy = yield* ManagedPolicy.ManagedPolicy.pipe(
+          Effect.provide(ManagedPolicy.layer),
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({ env: { T3CODE_DEV_MANAGED_POLICY_PATH: policyPath } }),
+            ),
+          ),
+        );
+        assert.isFalse(ManagedLimits.allowsConnect(policy));
+        assert.isTrue(ManagedLimits.allowsRemoteClients(policy));
+      }
+    }).pipe(Effect.scoped),
   );
 
   it.effect("summarizes locked settings for clients", () =>

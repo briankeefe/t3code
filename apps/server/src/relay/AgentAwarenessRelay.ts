@@ -52,6 +52,8 @@ import { EnvironmentSigningKey } from "../cloud/environmentKeys.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
+import * as ManagedLimits from "../policy/managedLimits.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 
@@ -427,6 +429,15 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
 
 /** @public */
 export const make = Effect.gen(function* () {
+  if (!ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy)) {
+    return AgentAwarenessRelay.of({
+      publishThread: () => Effect.void,
+      drain: Effect.void,
+      requestCatchUp: () => Effect.void,
+      start: () => Effect.void,
+    });
+  }
+
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;

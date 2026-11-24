@@ -41,6 +41,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as AgentAwarenessRelay from "./AgentAwarenessRelay.ts";
 
@@ -169,6 +170,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly respond?: (attempt: number) => Response;
     readonly failSecretRead?: (name: string) => boolean;
     readonly linked?: boolean;
+    readonly connectDenied?: boolean;
     readonly readShell?: (threadId: ThreadId) => Effect.Effect<OrchestrationV2ThreadShell | null>;
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
     readonly catchUpThreads?: ReadonlyArray<OrchestrationV2ThreadShell>;
@@ -314,6 +316,13 @@ const makeTestRelay = Effect.fnUntraced(function* (
   };
   const relay = yield* AgentAwarenessRelay.make.pipe(
     Effect.provide(EnvironmentKeys.layer),
+    Effect.provide(
+      ManagedPolicy.layerTest(
+        options.connectDenied
+          ? { schemaVersion: 1, organization: "Example Corp", limits: { connect: false } }
+          : undefined,
+      ),
+    ),
     Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
     Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
     Effect.provideService(ServerEnvironment.ServerEnvironment, {
@@ -340,6 +349,14 @@ const makeTestRelay = Effect.fnUntraced(function* (
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect("does not publish activity with stale relay credentials when Connect is denied", () =>
+    Effect.gen(function* () {
+      const { relay, publications } = yield* makeTestRelay({ connectDenied: true });
+      yield* relay.publishThread(THREAD_ID);
+      assert.isEmpty(publications);
+    }),
+  );
+
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(

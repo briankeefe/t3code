@@ -727,7 +727,7 @@ const layerServerRestart = Layer.effect(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
-  AgentAwarenessRelay.layer,
+  AgentAwarenessRelay.layer.pipe(Layer.provide(ManagedPolicy.layer)),
   ProviderHostPathWatcher.layer.pipe(Layer.provide(layerDesktopTelemetryReceiver)),
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
